@@ -4,7 +4,7 @@
  * 색상: 무채색(dark gray 계열), 열 너비: 전체 3, 이미지 비율 유지
  */
 
-import { REQUIRED_FOS, CASE_LABELS } from "./analysis-classifier.js";
+import { REQUIRED_FOS } from "./analysis-classifier.js";
 
 function getExcelJS() {
   const EJ = globalThis.ExcelJS;
@@ -184,28 +184,24 @@ function writeMaterialTable(ws, startRow, _title, mats) {
 //   검토결과: K~S  (9열)
 //   기준안전율: T~AB (9열)
 //   판정:     AC~AH (6열)
-function writeSummaryTable(ws, startRow, representative) {
+function writeSummaryTable(ws, startRow, cases) {
   const hr = startRow;
   mc(ws, hr, COL.B,  hr, COL.J,  "구   분",    F_WHITE, ALIGN_CC, FILL_HEADER);
   mc(ws, hr, COL.K,  hr, COL.S,  "검토결과",   F_WHITE, ALIGN_CC, FILL_HEADER);
   mc(ws, hr, COL.T,  hr, COL.AB, "기준안전율", F_WHITE, ALIGN_CC, FILL_HEADER);
   mc(ws, hr, COL.AC, hr, COL.AH, "판   정",    F_WHITE, ALIGN_CC, FILL_HEADER);
 
-  const activeCases = ["construction", "normal", "seismic"]
-    .filter((k) => representative[k] != null);
-
   let dataRow = startRow + 1;
-  for (const key of activeCases) {
-    const r      = representative[key];
-    const req    = REQUIRED_FOS[key];
-    const fos    = r?.fos;
+  for (const { key, label, result } of cases) {
+    const req    = REQUIRED_FOS[key] ?? 1.1;
+    const fos    = result?.fos;
     const judge  = judgeOkNg(fos, req);
     const fosStr = Number.isFinite(fos) ? fos.toFixed(3) : "—";
 
-    mc(ws, dataRow, COL.B,  dataRow, COL.J,  CASE_LABELS[key], F_BASE, ALIGN_CC, FILL_DATA);
-    mc(ws, dataRow, COL.K,  dataRow, COL.S,  fosStr,           F_BOLD, ALIGN_CC, FILL_DATA);
-    mc(ws, dataRow, COL.T,  dataRow, COL.AB, req,              F_BASE, ALIGN_CC, FILL_DATA);
-    mc(ws, dataRow, COL.AC, dataRow, COL.AH, judge,            F_BOLD, ALIGN_CC, FILL_DATA);
+    mc(ws, dataRow, COL.B,  dataRow, COL.J,  label,  F_BASE, ALIGN_CC, FILL_DATA);
+    mc(ws, dataRow, COL.K,  dataRow, COL.S,  fosStr, F_BOLD, ALIGN_CC, FILL_DATA);
+    mc(ws, dataRow, COL.T,  dataRow, COL.AB, req,    F_BASE, ALIGN_CC, FILL_DATA);
+    mc(ws, dataRow, COL.AC, dataRow, COL.AH, judge,  F_BOLD, ALIGN_CC, FILL_DATA);
 
     dataRow++;
   }
@@ -217,10 +213,9 @@ function writeSummaryTable(ws, startRow, representative) {
 //   기준안전율: B~M  (12열)
 //   검토안전율: N~X  (11열)
 //   판정:       Y~AH (10열)
-async function writeCaseDetail(wb, ws, caseKey, result, imgDataUrl, startRow, canvasW, canvasH) {
-  const req   = REQUIRED_FOS[caseKey];
-  const label = CASE_LABELS[caseKey];
-  const fos   = result?.fos;
+async function writeCaseDetail(wb, ws, caseKey, label, result, imgDataUrl, startRow, canvasW, canvasH) {
+  const req = REQUIRED_FOS[caseKey] ?? 1.1;
+  const fos = result?.fos;
   const judge = judgeOkNg(fos, req);
 
   mc(ws, startRow, COL.B, startRow, COL.AH, label, F_WHITE_T, ALIGN_CC, FILL_SECTION);
@@ -289,8 +284,9 @@ async function writeCaseDetail(wb, ws, caseKey, result, imgDataUrl, startRow, ca
 export async function generateStructuralReport(options) {
   const EJ = getExcelJS();
   const {
-    representative, materials, images,
-    structureName, sectionName,
+    cases,             // [{ key, label, result, image }]
+    materials,
+    projectName, structureName, sectionName,
     canvasW = 900, canvasH = 280,
     customMaterials,   // { structure: [...], ground: [...], foundation: [...] } | null
   } = options;
@@ -365,17 +361,14 @@ export async function generateStructuralReport(options) {
 
   mc(ws, cur, COL.B, cur, COL.AH, "2) 원호활동 검토결과 요약", F_BOLD, ALIGN_LC, null, null);
   cur++;
-  cur = writeSummaryTable(ws, cur, representative);
+  cur = writeSummaryTable(ws, cur, cases);
   cur++;
 
   mc(ws, cur, COL.B, cur, COL.AH, "3) 원호활동 검토결과", F_BOLD, ALIGN_LC, null, null);
   cur++;
 
-  const activeCases = ["construction", "normal", "seismic"]
-    .filter((k) => representative[k] != null);
-
-  for (const key of activeCases) {
-    cur = await writeCaseDetail(wb, ws, key, representative[key], images[key], cur, canvasW, canvasH);
+  for (const { key, label, result, image } of cases) {
+    cur = await writeCaseDetail(wb, ws, key, label, result, image, cur, canvasW, canvasH);
     cur++;
   }
 

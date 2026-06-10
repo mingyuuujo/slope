@@ -25,8 +25,7 @@
     <div>
       <h1>SLOPE/W 자동화 도구</h1>
       <p class="sub">
-        MohrCoulomb · S=f(Depth) · S=f(Datum) &nbsp;|&nbsp;
-        순수 HTML/CSS/JS — GSZ·DXF 처리는 브라우저에서 수행 (JSZip · dxf-parser 로컬 vendor)
+        사용 순서 &nbsp;:&nbsp; 1. 물성치 입력 &nbsp;→&nbsp; 2. Region 매핑 &nbsp;→&nbsp; 3. GSZ 편집 &nbsp;→&nbsp; 4. 결과 뷰어 &nbsp;&nbsp;·&nbsp;&nbsp; 편심 지지력 검토는 독립 탭
       </p>
     </div>
     <div class="header-actions">
@@ -62,14 +61,13 @@
       </div>
 
       <p class="hint">
-        모델별 편집: MohrCoulomb → 포화/습윤 단위중량, 점착력, 마찰각 &nbsp;|&nbsp;
-        SFnDepth → 포화/습윤, C_top, 증가율 &nbsp;|&nbsp;
-        SFnDatum → 포화/습윤, 증가율, 기준점착력, 기준고 · 회색 칸은 해당 모델에서 미사용입니다.
+        모델에 따라 편집 가능한 열이 달라집니다 — 회색 칸은 해당 모델의 미사용 항목입니다.
       </p>
 
       <div class="toolbar">
         <button type="button" class="btn" id="mat-add-row">+ 행 추가</button>
         <button type="button" class="btn" id="mat-del-row">− 선택 행 삭제</button>
+        <button type="button" class="btn" id="mat-copy">⎘ 복사하기</button>
       </div>
 
       <div class="table-wrap">
@@ -83,7 +81,7 @@
 
       <div class="bot-row">
         <div class="progress"><div class="progress-bar" id="mat-progress"></div></div>
-        <button type="button" class="btn" id="mat-json-export">↓ JSON 내보내기</button>
+        <button type="button" class="btn btn-primary" id="mat-json-export">↓ JSON 내보내기</button>
         <button type="button" class="btn btn-success" id="mat-run">▶ GSZ에 물성치 자동 입력</button>
       </div>
 
@@ -103,6 +101,7 @@
         <div class="file-row">
           <label for="map-dxf">DXF</label>
           <input type="file" id="map-dxf" accept=".dxf" />
+          <button type="button" class="btn" id="map-scan" title="DXF 레이어 다시 스캔">↺ 다시 스캔</button>
         </div>
         <div class="file-row">
           <label for="map-out-name">출력 파일명</label>
@@ -113,9 +112,7 @@
       <div class="group">
         <span class="group-title">해석 (Analysis) 설정</span>
         <p class="hint">
-          템플릿 GSZ의 <code>Analyses/Analysis</code> 와 동일하게 여러 해석을 둘 수 있습니다.
-          라디오로 편집할 해석을 고른 뒤, 각 Region(닫힌 폴리곤 1개당 GeoStudio Region 1개)별 <code>RegionUsesMaterials</code> 를 지정합니다.
-          실행 시 지오메트리는 한 번만 만들고, 해석마다 재료 매핑만 달라집니다.
+          여러 해석을 추가하고 라디오로 선택한 뒤 Region별 물성치를 매핑합니다. 지오메트리는 공통으로 한 번만 생성됩니다.
         </p>
         <div class="toolbar map-analysis-toolbar">
           <button type="button" class="btn" id="map-analysis-add">+ 해석 추가</button>
@@ -140,9 +137,7 @@
           <div class="group map-mat-workspace-group">
             <span class="group-title">템플릿 GSZ 재료 목록</span>
             <p class="hint">
-              템플릿 GSZ를 선택하면 Material의 ID·이름·모델이 표시됩니다.
-              <strong>재료 행을 오른쪽 도면으로 끌어놓거나</strong>, 행을 클릭한 뒤 도면에서 클릭하면 <strong>그 안의 Region</strong>에 Material이 할당됩니다
-              (중첩 시 작은 폴리곤이 우선). 아래 표와 동기화되며 <kbd>Esc</kbd>로 클릭 할당 모드를 끕니다.
+              재료 행을 도면으로 드래그하거나, 클릭 후 도면에서 클릭하면 Region에 할당됩니다. <kbd>Esc</kbd>로 클릭 모드를 끕니다.
             </p>
             <div class="table-wrap map-wrap map-mat-workspace-table">
               <table class="data-table" id="map-mat-ref-table">
@@ -162,8 +157,7 @@
           <div class="group map-preview-workspace-group">
             <span class="group-title">DXF Region 미리보기</span>
             <p class="hint">
-              GeoStudio에 들어가는 닫힌 영역과 동일하게(스냅·병합·경계 보정 반영) 그립니다. 중심에 <strong>R번호</strong>는 Region ID,
-              아래쪽 숫자는 할당된 Material ID입니다. 수위는 청록 <strong>@수위</strong> 점선입니다.
+              중심 R번호 = Region ID, 아래 숫자 = 할당된 Material ID, 청록 점선 = @수위.
             </p>
             <div class="map-canvas-view-toolbar">
               <span class="map-canvas-view-hint">휠: 확대/축소 · 가운데 버튼 또는 <kbd>Alt</kbd>+드래그: 이동</span>
@@ -184,18 +178,12 @@
         </div>
       </div>
 
-      <div class="toolbar">
-        <button type="button" class="btn btn-primary" id="map-scan">◎ DXF 레이어 스캔 (다시 읽기)</button>
-      </div>
-
       <div class="map-secondary-workspace" role="region" aria-label="Region 매핑 표와 수위">
         <div class="map-secondary-col map-secondary-regions">
           <div class="group map-region-workspace-group">
             <span class="group-title">Region별 Material ID</span>
             <p class="hint">
-              DXF를 선택하면 <strong>자동 스캔</strong>으로 Region 행이 채워집니다. <strong>R1, R2, …</strong>는 GeoStudio Region ID와 같습니다.
-              같은 DXF 레이어 안에 폴리곤이 여러 개여도 <strong>서로 다른 Material</strong>을 줄 수 있습니다. 0·빈칸인 Region은
-              해당 해석의 <code>RegionUsesMaterials</code> 에 포함되지 않습니다.
+              DXF 선택 시 자동 스캔됩니다. 0 또는 빈칸인 Region은 RegionUsesMaterials에서 제외됩니다.
             </p>
             <div class="table-wrap map-wrap map-region-workspace-table">
               <table class="data-table" id="map-table">
@@ -215,11 +203,7 @@
           <div class="group map-water-workspace-group">
             <span class="group-title">수위 (SlopeItem → Entry → DataPoints)</span>
             <p class="hint">
-              모든 해석에 <strong>동일한</strong> 수위 꺾은선이 기록됩니다. GeoStudio와 같이
-              <code>DataPoint</code> 의 X·Y(m)를 순서대로 나열합니다.
-              DXF에 레이어 <code>@수위</code> 의 폴리라인이 있으면 스캔 시 표에 자동 기입되며,
-              표를 고치면 미리보기의 청록 점선(<strong>@수위</strong>)으로 바로 반영됩니다.
-              (실제 DXF 바이너리는 수정하지 않습니다.)
+              모든 해석에 공통 적용됩니다. @수위 레이어가 있으면 스캔 시 자동 기입됩니다.
             </p>
             <div class="toolbar map-water-toolbar">
               <button type="button" class="btn" id="map-water-add-row">+ 점 추가</button>
@@ -452,7 +436,10 @@
             <!-- 우: 물성치 편집 (전역) -->
             <div class="gszedit-mat-region-col">
               <div class="gszedit-subsection">
-                <span class="gszedit-subsection-title">물성치 편집 (전역)</span>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                  <span class="gszedit-subsection-title">물성치 편집 (전역)</span>
+                  <button type="button" class="btn" id="gszedit-mat-copy" style="padding:2px 8px;font-size:12px;">⎘ 복사하기</button>
+                </div>
                 <p class="hint" id="gszedit-mat-hint">GSZ 파일을 로드하면 물성치 목록이 표시됩니다.</p>
                 <div class="gszedit-mat-scroll">
                   <table class="data-table gszedit-mat-table" id="gszedit-mat-table">
@@ -496,7 +483,7 @@
     <section id="panel-result" class="panel" role="tabpanel">
 
       <div class="group">
-        <span class="group-title">해석 결과 파일 설정</span>
+        <span class="group-title"><span class="step-badge">1</span> 해석 결과 파일 설정</span>
         <div class="file-row">
           <label for="rv-file">해석 완료 GSZ</label>
           <input type="file" id="rv-file" accept=".gsz,application/octet-stream" />
@@ -559,7 +546,7 @@
 
       <!-- 물성치 JSON 업로드 -->
       <div class="group" id="rv-mat-json-group">
-        <span class="group-title">물성치 JSON 업로드 (선택)</span>
+        <span class="group-title"><span class="step-badge">2</span> 물성치 JSON 업로드 <span style="font-weight:400;font-size:11px;color:var(--dim)">(선택)</span></span>
         <p class="hint">
           물성치 입력탭에서 내보낸 JSON을 업로드하면 해당 물성치가 Excel 설계정수 테이블에 사용됩니다.
           업로드하지 않으면 GSZ에서 자동 추출합니다.
@@ -593,31 +580,41 @@
 
       <!-- 구조계산서 Excel 생성 -->
       <div class="group rv-excel-group">
-        <span class="group-title">구조계산서 Excel 생성</span>
+        <span class="group-title"><span class="step-badge">3</span> 구조계산서 Excel 생성</span>
         <p class="hint">
-          GSZ 파일 업로드 후 각 케이스(시공시/상시/지진시)에 사용할 해석을 직접 선택하세요.
+          GSZ 파일 업로드 후 각 케이스에 사용할 해석을 선택하고, 제목을 직접 입력하세요.
           선택하지 않은 케이스는 Excel에 출력되지 않습니다.
         </p>
 
         <!-- 케이스별 해석 선택 -->
         <div class="rv-case-select-grid">
-          <div class="rv-case-select-row">
-            <span class="rv-case-label">시공시 해석</span>
-            <select id="rv-case-construction" class="rv-select rv-case-sel">
-              <option value="">선택 안함</option>
-            </select>
+          <!-- 시공시: 다단계 -->
+          <div class="rv-construction-section">
+            <div class="rv-construction-header">
+              <span class="rv-case-label" style="font-weight:600;color:var(--text);width:auto">시공시 해석</span>
+              <button type="button" class="btn" id="rv-construction-add" style="padding:2px 10px;font-size:12px">+ 단계 추가</button>
+            </div>
+            <div id="rv-construction-stages">
+              <!-- JS에서 동적 생성 -->
+            </div>
           </div>
+          <!-- 상시 -->
           <div class="rv-case-select-row">
-            <span class="rv-case-label">상시 해석</span>
+            <input type="text" id="rv-label-normal" class="rv-case-label-inp" value="상시" placeholder="상시"/>
+            <span class="rv-case-sublabel">해석</span>
             <select id="rv-case-normal" class="rv-select rv-case-sel">
               <option value="">선택 안함</option>
             </select>
+            <span></span>
           </div>
+          <!-- 지진시 -->
           <div class="rv-case-select-row">
-            <span class="rv-case-label">지진시 해석</span>
+            <input type="text" id="rv-label-seismic" class="rv-case-label-inp" value="지진시" placeholder="지진시"/>
+            <span class="rv-case-sublabel">해석</span>
             <select id="rv-case-seismic" class="rv-select rv-case-sel">
               <option value="">선택 안함</option>
             </select>
+            <span></span>
           </div>
         </div>
 
@@ -642,7 +639,7 @@
 
       <!-- 편심하중 검토 시트 -->
       <div class="group rv-eccentric-group">
-        <span class="group-title">편심하중(Bishop법) 검토 포함</span>
+        <span class="group-title"><span class="step-badge">4</span> 편심하중 검토 시트 추가 <span style="font-weight:400;font-size:11px;color:var(--dim)">(선택)</span></span>
         <div class="file-row" style="margin-bottom:4px">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
             <input type="checkbox" id="rv-eccentric-enable" />
@@ -839,6 +836,10 @@
           <div class="ecc-result-header">
             <div class="ecc-card-title">계산 결과 <span class="ecc-auto-badge">자동계산</span></div>
             <div class="ecc-btn-group">
+              <button type="button" id="ecc-tab-reset" class="ecc-reset-btn">
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true"><path d="M2 6.5A4.5 4.5 0 1 1 6.5 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><polyline points="2,4 2,6.5 4.5,6.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                초기화
+              </button>
               <input type="file" id="ecc-tab-import-file" accept=".json" style="display:none">
               <button type="button" id="ecc-tab-import" class="ecc-import-btn">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">

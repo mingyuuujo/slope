@@ -677,7 +677,11 @@ function downloadBlob(blob, filename) {
 
 function setProgress(id, pct) {
   const bar = document.getElementById(id);
-  if (bar) bar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+  if (!bar) return;
+  const normalized = Math.min(100, Math.max(0, pct));
+  bar.style.width = `${normalized}%`;
+  const wrap = bar.parentElement;
+  if (wrap) wrap.classList.toggle("active", normalized > 0);
 }
 
 function buildMatThead() {
@@ -1954,6 +1958,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("mat-add-row").addEventListener("click", matAddRow);
   document.getElementById("mat-del-row").addEventListener("click", matDelSelectedRow);
+  document.getElementById("mat-copy")?.addEventListener("click", () => {
+    const table = document.getElementById("mat-table");
+    if (!table) return;
+    const rows = [];
+    // 헤더
+    const ths = table.querySelectorAll("thead th");
+    rows.push([...ths].map(th => th.innerText.replace(/\n/g, " ").trim()).join("\t"));
+    // 데이터행
+    table.querySelectorAll("tbody tr").forEach(tr => {
+      const cells = [...tr.querySelectorAll("td")].map(td => {
+        const sel = td.querySelector("select");
+        if (sel) return sel.value;
+        // 색상 셀: color-cell 안의 text input
+        const colorInp = td.querySelector(".color-cell input[type='text']");
+        if (colorInp) return colorInp.value;
+        const inp = td.querySelector("input");
+        if (inp) return inp.value;
+        return td.textContent.trim();
+      });
+      rows.push(cells.join("\t"));
+    });
+    navigator.clipboard.writeText(rows.join("\n")).then(() => toast("물성치 데이터가 복사되었습니다."), () => toast("복사 실패 — 클립보드 권한을 확인하세요.", false));
+  });
   document.getElementById("mat-run").addEventListener("click", runMaterials);
   document.getElementById("mat-json-export")?.addEventListener("click", () => {
     const mats = collectMaterials();

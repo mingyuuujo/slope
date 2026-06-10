@@ -62,11 +62,16 @@
       keys.forEach((k) => {
         const el = document.getElementById(`${prefix}-${k}`);
         if (!el) return;
-        if (!res) { el.textContent = "-"; return; }
+        if (!res) { el.innerHTML = "-"; return; }
         const v = res[k];
-        el.textContent = (v !== null && v !== undefined)
-          ? (typeof v === "string" ? v : isFinite(v) ? v.toFixed(2) : "-")
-          : "-";
+        if (k === "dist" && typeof v === "string") {
+          const cls = v === "사다리꼴분포" ? "dist-trap" : "dist-tri";
+          el.innerHTML = `<span class="dist-badge ${cls}">${v}</span>`;
+        } else {
+          el.textContent = (v !== null && v !== undefined)
+            ? (typeof v === "string" ? v : isFinite(v) ? v.toFixed(2) : "-")
+            : "-";
+        }
       });
     }
 
@@ -137,6 +142,15 @@
     reader.readAsText(file);
   }
 
+  function resetForm() {
+    const defaults = { "ecc-tab-gammaw": "10.3", "ecc-tab-gammasat": "20" };
+    const clearIds = ["ecc-tab-B", "ecc-tab-D", "ecc-tab-Vn", "ecc-tab-Hn", "ecc-tab-Mvn", "ecc-tab-Mhn",
+                      "ecc-tab-Ve", "ecc-tab-He", "ecc-tab-Mve", "ecc-tab-Mhe"];
+    clearIds.forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
+    Object.entries(defaults).forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.value = val; });
+    updateCalc();
+  }
+
   function initEccentricChecker() {
     const inputIds = [
       "ecc-tab-B", "ecc-tab-D", "ecc-tab-gammasat", "ecc-tab-gammaw",
@@ -149,6 +163,7 @@
     document.getElementById("ecc-tab-export")?.addEventListener("click", exportJson);
     document.getElementById("ecc-tab-import")?.addEventListener("click", importJson);
     document.getElementById("ecc-tab-import-file")?.addEventListener("change", onImportFileChange);
+    document.getElementById("ecc-tab-reset")?.addEventListener("click", resetForm);
     updateCalc();
   }
 

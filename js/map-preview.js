@@ -350,7 +350,7 @@ export function applyWheelToMapView(view, frame, canvas, clientX, clientY, delta
   const panX = view.panX != null && Number.isFinite(view.panX) ? view.panX : 0;
   const panY = view.panY != null && Number.isFinite(view.panY) ? view.panY : 0;
   const factor = deltaY < 0 ? 1.12 : 0.89;
-  const newZ = Math.min(12, Math.max(0.12, oldZ * factor));
+  const newZ = Math.min(50, Math.max(0.12, oldZ * factor));
   const relX = (mx - w / 2 - panX) / oldZ;
   const relY = (my - h / 2 - panY) / oldZ;
   view.zoom = newZ;
@@ -363,7 +363,7 @@ export function stepMapViewZoomCenter(view, frame, factor) {
   if (!view || !frame) return;
   const oldZ =
     view.zoom != null && Number.isFinite(view.zoom) ? view.zoom : 1;
-  const newZ = Math.min(12, Math.max(0.12, oldZ * factor));
+  const newZ = Math.min(50, Math.max(0.12, oldZ * factor));
   const r = newZ / oldZ;
   view.zoom = newZ;
   view.panX =

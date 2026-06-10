@@ -35,7 +35,9 @@ let gActiveIdx = 0;
 let gSelectedRegionId = null;
 
 // canvas transform for hit-testing (set when drawing)
-let gCanvasTf = null; // { scale, offX, offY, minX, minY }
+let gCanvasTf   = null; // { scale, offX, offY, minX, minY }
+let gCanvasView = { zoom: 1, panX: 0, panY: 0 };
+let gCanvasWH   = { W: 680, H: 260 };
 
 // ─── localStorage ────────────────────────────────────────────
 function saveLS() {
@@ -467,6 +469,8 @@ function drawRegionCanvas() {
   const H = 260;
   canvas.width  = W;
   canvas.height = H;
+  gCanvasWH.W   = W;
+  gCanvasWH.H   = H;
 
   const ctx2d = canvas.getContext("2d");
   ctx2d.clearRect(0, 0, W, H);
@@ -501,6 +505,13 @@ function drawRegionCanvas() {
 
   function toC(x, y) { return [offX + (x - minX)*scale, offY - (y - minY)*scale]; }
 
+  // zoom/pan 변환 적용
+  const { zoom, panX, panY } = gCanvasView;
+  ctx2d.save();
+  ctx2d.translate(W / 2 + panX, H / 2 + panY);
+  ctx2d.scale(zoom, zoom);
+  ctx2d.translate(-W / 2, -H / 2);
+
   for (const r of gState.regions) {
     if (!r.coords.length) continue;
     const matId      = rmMap.get(r.id);
@@ -524,7 +535,7 @@ function drawRegionCanvas() {
 
     ctx2d.setLineDash(hasMat ? [] : [5, 3]);
     ctx2d.strokeStyle = isSelected ? "#1976D2" : (hasMat ? "#555" : "#888");
-    ctx2d.lineWidth   = isSelected ? 2.5 : (hasMat ? 1 : 1.5);
+    ctx2d.lineWidth   = isSelected ? 2.5 / zoom : (hasMat ? 1 / zoom : 1.5 / zoom);
     ctx2d.stroke();
     ctx2d.setLineDash([]);
 
@@ -541,13 +552,20 @@ function drawRegionCanvas() {
       ctx2d.fillText(`R${r.id}`, tx, ty);
     }
   }
+
+  ctx2d.restore();
 }
 
 function canvasHitRegion(canvasX, canvasY) {
   if (!gCanvasTf || !gState?.regions) return null;
   const { scale, offX, offY, minX, minY } = gCanvasTf;
-  const wx = (canvasX - offX) / scale + minX;
-  const wy = -(canvasY - offY) / scale + minY;
+  const { zoom, panX, panY } = gCanvasView;
+  const { W, H } = gCanvasWH;
+  // zoom/pan 역변환: 화면 좌표 → 베이스 캔버스 좌표
+  const bx = (canvasX - W / 2 - panX) / zoom + W / 2;
+  const by = (canvasY - H / 2 - panY) / zoom + H / 2;
+  const wx = (bx - offX) / scale + minX;
+  const wy = -(by - offY) / scale + minY;
 
   for (const r of gState.regions) {
     if (pointInPolygon(wx, wy, r.coords)) return r.id;
@@ -896,22 +914,68 @@ function setupCanvasEvents() {
   if (!canvas) return;
 
   canvas.style.cursor = "pointer";
+
+  // 휠 줌
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const { W, H } = gCanvasWH;
+    const mx = ((e.clientX - rect.left) / rect.width)  * W;
+    const my = ((e.clientY - rect.top)  / rect.height) * H;
+    const factor = e.deltaY < 0 ? 1.12 : 0.89;
+    const oldZ = gCanvasView.zoom;
+    const newZ = Math.min(50, Math.max(0.12, oldZ * factor));
+    const relX = (mx - W / 2 - gCanvasView.panX) / oldZ;
+    const relY = (my - H / 2 - gCanvasView.panY) / oldZ;
+    gCanvasView.zoom = newZ;
+    gCanvasView.panX = mx - W / 2 - relX * newZ;
+    gCanvasView.panY = my - H / 2 - relY * newZ;
+    drawRegionCanvas();
+  }, { passive: false });
+
+  // 드래그 팬
+  let dragStart = null;
+  canvas.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    dragStart = { x: e.clientX, y: e.clientY, panX: gCanvasView.panX, panY: gCanvasView.panY };
+    canvas.style.cursor = "grabbing";
+  });
   canvas.addEventListener("mousemove", (e) => {
+    if (dragStart) {
+      gCanvasView.panX = dragStart.panX + (e.clientX - dragStart.x);
+      gCanvasView.panY = dragStart.panY + (e.clientY - dragStart.y);
+      drawRegionCanvas();
+      return;
+    }
     const rect = canvas.getBoundingClientRect();
     const rid  = canvasHitRegion(e.clientX - rect.left, e.clientY - rect.top);
     canvas.title = rid ? `리즌 ${rid}` : "";
   });
-  canvas.addEventListener("click", (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const rid  = canvasHitRegion(e.clientX - rect.left, e.clientY - rect.top);
-    if (rid) {
-      gSelectedRegionId = rid;
-      drawRegionCanvas();
-      highlightTableRow(rid);
-      // 해당 행으로 스크롤
-      const row = $id("gszedit-region-map-tbody")?.querySelector(`tr[data-region-id="${rid}"]`);
-      row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  const endDrag = (e) => {
+    if (!dragStart) return;
+    const moved = Math.abs(e.clientX - dragStart.x) > 4 || Math.abs(e.clientY - dragStart.y) > 4;
+    dragStart = null;
+    canvas.style.cursor = "pointer";
+    if (!moved) {
+      // 클릭으로 처리
+      const rect = canvas.getBoundingClientRect();
+      const rid  = canvasHitRegion(e.clientX - rect.left, e.clientY - rect.top);
+      if (rid) {
+        gSelectedRegionId = rid;
+        drawRegionCanvas();
+        highlightTableRow(rid);
+        const row = $id("gszedit-region-map-tbody")?.querySelector(`tr[data-region-id="${rid}"]`);
+        row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
     }
+  };
+  canvas.addEventListener("mouseup",    endDrag);
+  canvas.addEventListener("mouseleave", endDrag);
+
+  // 더블클릭: 뷰 초기화
+  canvas.addEventListener("dblclick", () => {
+    gCanvasView.zoom = 1; gCanvasView.panX = 0; gCanvasView.panY = 0;
+    drawRegionCanvas();
   });
 }
 
@@ -939,6 +1003,7 @@ async function handleFileLoad(e) {
     gState = parseFromDoc(doc, xmlName, xmlText);
     gActiveIdx = 0;
     gSelectedRegionId = null;
+    gCanvasView.zoom = 1; gCanvasView.panX = 0; gCanvasView.panY = 0;
     saveLS(); setProgress(80);
     renderAll(); setProgress(100);
     appendLog(`✓ ${file.name} 로드 완료`);
@@ -1005,6 +1070,26 @@ export function initGszEditor() {
 
   $id("gszedit-file")?.addEventListener("change", handleFileLoad);
   $id("gszedit-run")?.addEventListener("click", handleDownload);
+  $id("gszedit-mat-copy")?.addEventListener("click", () => {
+    const table = $id("gszedit-mat-table");
+    if (!table) return;
+    const rows = [];
+    // 헤더
+    const ths = table.querySelectorAll("thead th");
+    rows.push([...ths].map(th => th.innerText.replace(/\n/g, " ").trim()).join("\t"));
+    // 데이터행
+    table.querySelectorAll("tbody tr").forEach(tr => {
+      const cells = [...tr.querySelectorAll("td")].map(td => {
+        const inp = td.querySelector("input");
+        if (inp) return inp.value;
+        return td.textContent.trim();
+      });
+      rows.push(cells.join("\t"));
+    });
+    navigator.clipboard.writeText(rows.join("\n"))
+      .then(() => toastMsg("물성치 데이터가 복사되었습니다."))
+      .catch(() => toastMsg("복사 실패 — 클립보드 권한을 확인하세요.", false));
+  });
 
   // 탭 전환 시 캔버스 재그리기 (panel 가시화 후 width 확정)
   document.querySelectorAll('.tab-btn[data-tab="gsz-edit"]').forEach(btn => {

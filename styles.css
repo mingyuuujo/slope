@@ -192,6 +192,24 @@ body {
   font-size: 11px;
 }
 
+/* 결과 뷰어 step 번호 배지 */
+.step-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-right: 3px;
+  vertical-align: middle;
+  line-height: 1;
+}
+
 .tabs {
   display: flex;
   gap: 4px;
@@ -204,11 +222,15 @@ body {
   color: var(--muted);
   border: none;
   border-radius: 4px 4px 0 0;
-  padding: 10px 22px;
+  padding: 10px 18px;
   font-weight: 500;
   cursor: pointer;
   min-height: 44px;
   transition: background-color 0.15s ease, color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
 }
 
 .tab-btn:hover {
@@ -844,6 +866,10 @@ table.data-table td.readonly-cell input {
   border: 1px solid var(--border);
   border-radius: 4px;
   overflow: hidden;
+  visibility: hidden;
+}
+.progress.active {
+  visibility: visible;
 }
 
 .progress-bar {
@@ -1388,9 +1414,10 @@ table.data-table td.readonly-cell input {
 }
 
 .rv-case-select-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 80px 28px 0.3fr 28px;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
 }
 
 .rv-case-label {
@@ -1401,9 +1428,48 @@ table.data-table td.readonly-cell input {
   white-space: nowrap;
 }
 
+.rv-case-label-inp {
+  width: 80px;
+  flex-shrink: 0;
+  padding: 4px 6px;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.88em;
+}
+
+.rv-case-sublabel {
+  font-size: 0.82em;
+  color: var(--muted);
+  white-space: nowrap;
+  text-align: center;
+}
+
 .rv-case-sel {
   flex: 1;
   max-width: 500px;
+}
+
+.rv-construction-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rv-construction-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.rv-stage-row {
+  padding-left: 0;
+}
+
+.rv-stage-spacer {
+  display: inline-block;
 }
 
 /* Excel 생성 영역 */
@@ -1425,6 +1491,20 @@ table.data-table td.readonly-cell input {
 /* 편심하중 UI */
 .rv-eccentric-group {
   margin-top: 8px;
+}
+
+/* 편심 섹션은 라벨+드롭다운 2컬럼 구조 → flex로 복원 */
+.rv-eccentric-group .rv-case-select-row {
+  display: flex;
+  gap: 8px;
+}
+.rv-eccentric-group .rv-case-label {
+  width: auto;
+  min-width: 110px;
+  white-space: nowrap;
+}
+.rv-eccentric-group .rv-case-select-row select {
+  flex: 1;
 }
 
 .rv-ecc-section-label {
@@ -1684,7 +1764,7 @@ table.data-table td.readonly-cell input {
 .ecc-result-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 15px;
+  font-size: 13px;
 }
 .ecc-result-table th,
 .ecc-result-table td {
@@ -1696,7 +1776,7 @@ table.data-table td.readonly-cell input {
 .ecc-th-label {
   background: var(--surface2);
   text-align: left;
-  width: 55%;
+  width: 40%;
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -1715,18 +1795,18 @@ table.data-table td.readonly-cell input {
 .ecc-row-label {
   text-align: left;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 13px;
   background: var(--surface2);
 }
 .ecc-row-group {
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--dim);
   background: var(--surface2);
-  padding-top: 10px;
-  padding-bottom: 10px;
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 .ecc-group-start td {
   border-top: 2px solid var(--border);
@@ -1735,6 +1815,47 @@ table.data-table td.readonly-cell input {
   color: var(--accent-text);
   font-weight: 600;
 }
+
+/* 하중분포 결과 배지 */
+.dist-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dist-trap {
+  background: rgba(61, 168, 124, 0.15);
+  color: #3da87c;
+}
+.dist-tri {
+  background: rgba(200, 150, 58, 0.18);
+  color: #c8963c;
+}
+
+/* 편심 검토 초기화 버튼 */
+.ecc-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 12px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.ecc-reset-btn:hover {
+  background: var(--surface2);
+  color: var(--text);
+  border-color: var(--accent);
+}
+.ecc-reset-btn svg { flex-shrink: 0; }
 
 /* btn-sm (결과뷰어 JSON 가져오기 버튼) */
 .btn-sm {

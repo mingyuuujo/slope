@@ -588,7 +588,7 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
 
   // 파괴원호 + FOS 텍스트
   if (slip && Number.isFinite(slip.centerX)) {
-    drawSlipCircle(ctx, slip, tf, W, H, topPx, assignedRegions, toC, isDark);
+    drawSlipCircle(ctx, slip, tf, W, H, topPx, regions, toC, isDark);
   }
 
   return tf;
@@ -598,35 +598,100 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
  * 파괴원호: 물성치 할당된 리즌만 클리핑 마스크 사용.
  * FOS 텍스트는 상단 topPx 영역.
  */
-function drawSlipCircle(ctx, slip, tf, W, H, topPx, assignedRegions, toC, _isDark) {
+function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark) {
   const { centerX: cx, centerY: cy, radius: r, fos } = slip;
   const ccx = tf.offX + (cx - tf.minX) * tf.scale;
   const ccy = tf.offY - (cy - tf.minY) * tf.scale;
   const cr  = r * tf.scale;
 
-  // 클리핑: 물성치 할당 리즌만
-  ctx.save();
-  ctx.beginPath();
-  for (const region of assignedRegions) {
-    if (!region.coords.length) continue;
-    const [sx, sy] = toC(region.coords[0].x, region.coords[0].y);
-    ctx.moveTo(sx, sy);
-    for (let i = 1; i < region.coords.length; i++) {
-      const [px, py] = toC(region.coords[i].x, region.coords[i].y);
-      ctx.lineTo(px, py);
+  // 지표면 프로파일: 각 X열에서 모든 리즌 경계선의 최소 canvas-Y (= 가장 높은 지점)
+  const groundY = new Float32Array(W).fill(H);
+  for (const region of allRegions) {
+    const n = region.coords.length;
+    for (let i = 0; i < n; i++) {
+      const [x1, y1] = toC(region.coords[i].x, region.coords[i].y);
+      const [x2, y2] = toC(region.coords[(i + 1) % n].x, region.coords[(i + 1) % n].y);
+      const xMin = Math.max(0, Math.floor(Math.min(x1, x2)));
+      const xMax = Math.min(W - 1, Math.ceil(Math.max(x1, x2)));
+      const dx   = x2 - x1;
+      for (let x = xMin; x <= xMax; x++) {
+        const y = Math.abs(dx) < 0.001 ? Math.min(y1, y2) : y1 + (x - x1) / dx * (y2 - y1);
+        if (y < groundY[x]) groundY[x] = y;
+      }
     }
-    ctx.closePath();
   }
-  ctx.clip();
+  for (let x = 0; x < W; x++) {
+    if (groundY[x] >= H) groundY[x] = topPx;
+  }
 
-  const slipColor = "#111111";
-  ctx.strokeStyle = slipColor;
-  ctx.lineWidth   = 2;
-  ctx.setLineDash([]);
-  ctx.beginPath();
-  ctx.arc(ccx, ccy, cr, 0, 2 * Math.PI);
-  ctx.stroke();
-  ctx.restore();
+  // 원과 지표면 교점 탐색 (각 groundY 세그먼트와 원의 교점)
+  const intersections = [];
+  for (let x = 0; x < W - 1; x++) {
+    const gx1 = x,     gy1 = groundY[x];
+    const gx2 = x + 1, gy2 = groundY[x + 1];
+    const ddx = gx2 - gx1;
+    const ddy = gy2 - gy1;
+    const ax  = gx1 - ccx, ay = gy1 - ccy;
+    const A   = ddx * ddx + ddy * ddy;
+    const B   = 2 * (ax * ddx + ay * ddy);
+    const C   = ax * ax + ay * ay - cr * cr;
+    const disc = B * B - 4 * A * C;
+    if (disc < 0) continue;
+    const sqrtD = Math.sqrt(disc);
+    for (const sign of [-1, 1]) {
+      const t = (-B + sign * sqrtD) / (2 * A);
+      if (t < -1e-6 || t > 1 + 1e-6) continue;
+      const tc = Math.max(0, Math.min(1, t));
+      const ix = gx1 + tc * ddx;
+      const iy = gy1 + tc * ddy;
+      intersections.push({ x: ix, angle: Math.atan2(iy - ccy, ix - ccx) });
+    }
+  }
+
+  const strokeArc = (sa, ea, acw) => {
+    ctx.save();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(ccx, ccy, cr, sa, ea, acw);
+    ctx.strokeStyle = "#111111";
+    ctx.lineWidth   = 2;
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  if (intersections.length >= 2) {
+    intersections.sort((a, b) => a.x - b.x);
+    const leftAngle  = intersections[0].angle;
+    const rightAngle = intersections[intersections.length - 1].angle;
+    // 캔버스 Y↓ 기준: π/2 = 아래 방향. 왼쪽 교점 각도 > π/2 > 오른쪽 교점 각도 이면
+    // anticlockwise=true(각도 감소 방향)로 π/2를 통과 → 지반 아래 구간 호가 됨.
+    const PI2 = Math.PI / 2;
+    if (leftAngle > PI2 && rightAngle < PI2) {
+      strokeArc(leftAngle, rightAngle, true);
+    } else {
+      // 비표준 케이스: 클리핑 폴백
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(0, groundY[0]);
+      for (let x = 1; x < W; x++) ctx.lineTo(x, groundY[x]);
+      ctx.lineTo(W, H); ctx.lineTo(0, H);
+      ctx.closePath();
+      ctx.clip();
+      strokeArc(0, 2 * Math.PI, false);
+      ctx.restore();
+    }
+  } else {
+    // 교점 없음: 클리핑 폴백
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, groundY[0]);
+    for (let x = 1; x < W; x++) ctx.lineTo(x, groundY[x]);
+    ctx.lineTo(W, H); ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.clip();
+    strokeArc(0, 2 * Math.PI, false);
+    ctx.restore();
+  }
 
   const centerVisible = ccx >= 0 && ccx <= W && ccy >= topPx && ccy <= H;
   const fontSize      = Math.min(28, topPx * 0.55);
@@ -800,30 +865,19 @@ function renderResultTable(allResults) {
 }
 
 // ─── 케이스 선택 드롭다운 채우기 ─────────────────────────────
-function populateCaseSelects(allResults) {
-  const selIds = {
-    construction:      "rv-case-construction",
-    normal:            "rv-case-normal",
-    seismic:           "rv-case-seismic",
-    eccentric_normal:  "rv-case-eccentric-normal",
-    eccentric_seismic: "rv-case-eccentric-seismic",
-  };
-
-  for (const [caseKey, selId] of Object.entries(selIds)) {
-    const sel = $(selId);
-    if (!sel) continue;
-    sel.innerHTML = '<option value="">선택 안함</option>';
-    allResults.forEach((r, i) => {
-      const opt = document.createElement("option");
-      opt.value = String(i);
-      const fosStr = Number.isFinite(r.fos) ? ` (FOS=${r.fos.toFixed(3)})` : "";
-      opt.textContent = `${r.analysisName}${fosStr}`;
-      sel.appendChild(opt);
-    });
-    // 키워드 기반 자동 선택 (최소 FOS)
+function populateOneSelect(sel, allResults, autoKey) {
+  sel.innerHTML = '<option value="">선택 안함</option>';
+  allResults.forEach((r, i) => {
+    const opt = document.createElement("option");
+    opt.value = String(i);
+    const fosStr = Number.isFinite(r.fos) ? ` (FOS=${r.fos.toFixed(3)})` : "";
+    opt.textContent = `${r.analysisName}${fosStr}`;
+    sel.appendChild(opt);
+  });
+  if (autoKey) {
     let bestIdx = -1, bestFos = Infinity;
     allResults.forEach((r, i) => {
-      if (classifyAnalysis(r.analysisName) === caseKey && r.fos < bestFos) {
+      if (classifyAnalysis(r.analysisName) === autoKey && r.fos < bestFos) {
         bestFos = r.fos;
         bestIdx = i;
       }
@@ -832,21 +886,81 @@ function populateCaseSelects(allResults) {
   }
 }
 
+function populateCaseSelects(allResults) {
+  const staticSelIds = {
+    normal:            "rv-case-normal",
+    seismic:           "rv-case-seismic",
+    eccentric_normal:  "rv-case-eccentric-normal",
+    eccentric_seismic: "rv-case-eccentric-seismic",
+  };
+  for (const [caseKey, selId] of Object.entries(staticSelIds)) {
+    const sel = $(selId);
+    if (sel) populateOneSelect(sel, allResults, caseKey);
+  }
+  // 시공시 단계 드롭다운 전부 채우기
+  document.querySelectorAll(".rv-construction-sel").forEach(sel => {
+    populateOneSelect(sel, allResults, "construction");
+  });
+}
+
+// 시공시 단계 행 추가
+function addConstructionStageRow(labelText, allResults) {
+  const container = $("rv-construction-stages");
+  if (!container) return;
+  const stageNum = container.querySelectorAll(".rv-stage-row").length + 1;
+  const label = labelText ?? `시공시 ${stageNum}단계`;
+
+  const row = document.createElement("div");
+  row.className = "rv-case-select-row rv-stage-row";
+  row.innerHTML = `
+    <input type="text" class="rv-case-label-inp rv-stage-label-inp" value="${label}" placeholder="단계명"/>
+    <span class="rv-case-sublabel">해석</span>
+    <select class="rv-select rv-case-sel rv-construction-sel">
+      <option value="">선택 안함</option>
+    </select>
+    <button type="button" class="btn rv-stage-remove" style="padding:0;width:26px;height:26px;font-size:13px;line-height:1;flex-shrink:0">✕</button>
+  `;
+  const sel = row.querySelector("select");
+  const results = allResults ?? rvState.allResults;
+  if (results.length) populateOneSelect(sel, results, "construction");
+
+  row.querySelector(".rv-stage-remove").addEventListener("click", () => row.remove());
+  container.appendChild(row);
+}
+
 // ─── 사용자 선택 대표 결과 ────────────────────────────────────
 function getUserRepresentative() {
-  const keys    = ["construction", "normal", "seismic"];
-  const selIds  = ["rv-case-construction", "rv-case-normal", "rv-case-seismic"];
-  const rep     = { construction: null, normal: null, seismic: null };
-  for (let i = 0; i < keys.length; i++) {
-    const sel = $(selIds[i]);
-    const val = sel ? sel.value.trim() : "";
-    if (val === "") continue;
+  // 시공시 다단계 수집
+  const constructionStages = [];
+  document.querySelectorAll("#rv-construction-stages .rv-stage-row").forEach(row => {
+    const labelInp = row.querySelector(".rv-stage-label-inp");
+    const sel      = row.querySelector(".rv-construction-sel");
+    const label    = (labelInp?.value ?? "").trim() || "시공시";
+    const val      = sel?.value.trim() ?? "";
+    if (val === "") return;
     const idx = parseInt(val, 10);
     if (Number.isFinite(idx) && idx >= 0 && idx < rvState.allResults.length) {
-      rep[keys[i]] = rvState.allResults[idx];
+      constructionStages.push({ label, result: rvState.allResults[idx] });
     }
-  }
-  return rep;
+  });
+
+  const getResult = (selId) => {
+    const val = $(selId)?.value.trim() ?? "";
+    if (!val) return null;
+    const idx = parseInt(val, 10);
+    return (Number.isFinite(idx) && idx >= 0 && idx < rvState.allResults.length)
+      ? rvState.allResults[idx] : null;
+  };
+
+  return {
+    constructionStages,
+    normal:       getResult("rv-case-normal"),
+    seismic:      getResult("rv-case-seismic"),
+    normalLabel:  ($("rv-label-normal")?.value  ?? "").trim() || "상시",
+    seismicLabel: ($("rv-label-seismic")?.value ?? "").trim() || "지진시",
+    // 하위 호환 (편심 등에서 사용하는 rep.construction)
+    construction: constructionStages.length > 0 ? constructionStages[0].result : null,
+  };
 }
 
 // ─── 캔버스 업데이트 ──────────────────────────────────────────
@@ -955,7 +1069,14 @@ async function loadGszFile(file) {
     });
   }
 
-  // Excel 케이스 선택 드롭다운 채우기
+  // 시공시 단계 초기화 후 1개 재생성
+  const stagesContainer = $("rv-construction-stages");
+  if (stagesContainer) {
+    stagesContainer.innerHTML = "";
+    addConstructionStageRow("시공시", rvState.allResults);
+  }
+
+  // Excel 케이스 선택 드롭다운 채우기 (상시/지진시/편심 등)
   populateCaseSelects(rvState.allResults);
 
   renderResultTable(rvState.allResults);
@@ -1104,7 +1225,7 @@ async function handleExcelDownload() {
   const sectionName   = ($("rv-excel-section")?.value  ?? "").trim() || "단면명";
 
   const rep = getUserRepresentative();
-  const hasAny = Object.values(rep).some((v) => v != null);
+  const hasAny = rep.constructionStages.length > 0 || rep.normal != null || rep.seismic != null;
   if (!hasAny) {
     alert("시공시/상시/지진시 중 하나 이상을 선택하세요.");
     return;
@@ -1132,10 +1253,20 @@ async function handleExcelDownload() {
       return offCanvas.toDataURL("image/png");
     }
 
+    // 시공시 단계별 PNG 생성
+    const constructionCases = [];
+    for (const stage of rep.constructionStages) {
+      constructionCases.push({
+        key: "construction",
+        label: stage.label,
+        result: stage.result,
+        image: await makePng(stage.result),
+      });
+    }
+
     const images = {
-      construction: await makePng(rep.construction),
-      normal:       await makePng(rep.normal),
-      seismic:      await makePng(rep.seismic),
+      normal:  await makePng(rep.normal),
+      seismic: await makePng(rep.seismic),
     };
 
     // renderResultCanvas가 콘텐츠 높이로 canvas.height를 갱신하므로 그 값을 사용
@@ -1182,10 +1313,16 @@ async function handleExcelDownload() {
       }
     }
 
+    // 케이스 목록: 시공시 단계들 + 상시 + 지진시
+    const excelCases = [
+      ...constructionCases,
+      ...(rep.normal  ? [{ key: "normal",  label: rep.normalLabel,  result: rep.normal,  image: images.normal  }] : []),
+      ...(rep.seismic ? [{ key: "seismic", label: rep.seismicLabel, result: rep.seismic, image: images.seismic }] : []),
+    ];
+
     const blob = await generateStructuralReport({
-      representative: rep,
-      materials:      rvState.materials,
-      images,
+      cases:           excelCases,
+      materials:       rvState.materials,
       projectName,
       structureName,
       sectionName,
@@ -1243,6 +1380,11 @@ export function initResultViewer() {
 
   if (pngBtn)   pngBtn.addEventListener("click", downloadCanvasImage);
   if (excelBtn) excelBtn.addEventListener("click", handleExcelDownload);
+
+  // 시공시 단계 추가 버튼
+  $("rv-construction-add")?.addEventListener("click", () => addConstructionStageRow());
+  // 초기 단계 행 1개 생성 (파일 로드 전이라 드롭다운은 비어있음)
+  addConstructionStageRow("시공시");
 
   const matJsonInput = $("rv-mat-json");
   const matJsonClear = $("rv-mat-json-clear");
