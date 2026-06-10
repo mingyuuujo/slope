@@ -502,6 +502,15 @@
             <span>View Region — 동일 물성 인접 리즌 경계 통합</span>
           </label>
         </div>
+        <div class="file-row" style="align-items:center;gap:8px;margin-top:4px">
+          <label for="rv-fix-height-enable" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:0.9em">
+            <input type="checkbox" id="rv-fix-height-enable" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
+            <span>이미지 높이 고정</span>
+          </label>
+          <input type="number" id="rv-fix-height-val" min="50" max="2000" step="10" placeholder="px"
+            style="display:none;width:72px;padding:2px 6px;font-size:0.88em;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px" />
+          <span id="rv-fix-height-hint" style="display:none;font-size:0.8em;color:var(--muted)">px — 단면 하단부터 잘림 / Excel PNG도 동일 비율 적용</span>
+        </div>
       </div>
 
       <!-- 캔버스 + 결과 패널 -->

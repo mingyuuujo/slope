@@ -27,6 +27,9 @@ let rvCaseOverrides = {};
 // View Region 토글 상태
 let rvViewRegion = false;
 
+// 이미지 높이 고정 옵션 (null = 자동)
+let rvFixedHeight = null;
+
 // ─── DOM 헬퍼 ─────────────────────────────────────────────────
 const $  = (id) => document.getElementById(id);
 
@@ -530,7 +533,9 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
   const scale  = (W - 2 * hPad) / gW;
   const drawW  = gW * scale;
   const drawH  = gH * scale;
-  const H      = Math.round(topPx + drawH + btmPad);
+  const autoH  = Math.round(topPx + drawH + btmPad);
+  // fixedHeight가 지정된 경우 해당 값으로 캔버스 높이 고정
+  const H      = (opts.fixedHeight && opts.fixedHeight > 0) ? opts.fixedHeight : autoH;
 
   canvas.width  = W;
   canvas.height = H;
@@ -982,7 +987,7 @@ async function updateCanvas(idx) {
     : null;
 
   renderResultCanvas(canvas, rvState.regions, rvState.materials, regionMatMap, slip, surchargeLoads, piezoLines,
-    { viewRegion: rvViewRegion });
+    { viewRegion: rvViewRegion, fixedHeight: rvFixedHeight });
   updateInfoPanel(result);
 }
 
@@ -1235,6 +1240,16 @@ async function handleExcelDownload() {
   if (btnEl) btnEl.disabled = true;
   setStatus("Excel 생성 중...");
 
+  // Excel 버튼 클릭 시점의 UI 값으로 rvFixedHeight 동기화
+  // (input blur 없이 바로 클릭한 경우에도 최신값 사용)
+  {
+    const fhChk = $("rv-fix-height-enable");
+    const fhVal = $("rv-fix-height-val");
+    if (fhChk && fhVal) {
+      rvFixedHeight = fhChk.checked ? (parseInt(fhVal.value, 10) || null) : null;
+    }
+  }
+
   try {
     // 오프스크린 캔버스 (Excel 이미지용) — 너비 고정, 높이는 리즌 범위에 맞게 자동 산정
     const CANVAS_W = 900;
@@ -1249,7 +1264,7 @@ async function handleExcelDownload() {
         ? { centerX: caseResult.centerX, centerY: caseResult.centerY, radius: caseResult.radius, fos: caseResult.fos }
         : null;
       renderResultCanvas(offCanvas, rvState.regions, rvState.materials, rmap, slip, surchargeLoads, piezoLines,
-        { forExcel: true, width: CANVAS_W, viewRegion: rvViewRegion });
+        { forExcel: true, width: CANVAS_W, viewRegion: rvViewRegion, fixedHeight: rvFixedHeight });
       return offCanvas.toDataURL("image/png");
     }
 
@@ -1443,6 +1458,34 @@ export function initResultViewer() {
   if (viewRegionChk) {
     viewRegionChk.addEventListener("change", () => {
       rvViewRegion = viewRegionChk.checked;
+      if (rvState.allResults.length) updateCanvas(rvState.selectedIdx);
+    });
+  }
+
+  const fixHeightChk = $("rv-fix-height-enable");
+  const fixHeightVal = $("rv-fix-height-val");
+  const fixHeightHint = $("rv-fix-height-hint");
+
+  if (fixHeightChk) {
+    fixHeightChk.addEventListener("change", () => {
+      const on = fixHeightChk.checked;
+      fixHeightVal.style.display  = on ? "" : "none";
+      fixHeightHint.style.display = on ? "" : "none";
+      rvFixedHeight = on ? (parseInt(fixHeightVal.value, 10) || null) : null;
+      if (rvState.allResults.length) updateCanvas(rvState.selectedIdx);
+    });
+  }
+
+  if (fixHeightVal) {
+    // input: 타이핑 즉시 반영 (blur 없이 Excel 버튼 눌러도 최신값 적용)
+    fixHeightVal.addEventListener("input", () => {
+      const v = parseInt(fixHeightVal.value, 10);
+      rvFixedHeight = (v > 0) ? v : null;
+      if (rvState.allResults.length) updateCanvas(rvState.selectedIdx);
+    });
+    fixHeightVal.addEventListener("change", () => {
+      const v = parseInt(fixHeightVal.value, 10);
+      rvFixedHeight = (v > 0) ? v : null;
       if (rvState.allResults.length) updateCanvas(rvState.selectedIdx);
     });
   }

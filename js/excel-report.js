@@ -224,16 +224,19 @@ async function writeCaseDetail(wb, ws, caseKey, label, result, imgDataUrl, start
   const IMG_ROWS = 7;
   const imgRow2  = imgRow1 + IMG_ROWS - 1;
 
-  // 이미지 높이: 열너비 기준 픽셀 환산 후 비율 유지
-  // (tl+br 앵커로 가로는 B~AH 열 경계에 정확히 맞추고, 행 높이로 세로 비율 제어)
-  const PX_PER_UNIT = 8;
-  const imgW = Math.round(COL_SPAN * COL_W * PX_PER_UNIT);          // ~792px
-  const imgH = Math.round(imgW * (canvasH / canvasW));               // 비율 유지
-  const rowHPx = imgH / IMG_ROWS;
-  const rowHPt = Math.round((rowHPx / (96 / 72)) * 4) / 4;          // 0.25pt 단위
-
-  for (let r = imgRow1; r <= imgRow2; r++) {
-    ws.getRow(r).height = rowHPt;
+  // 이미지 행 높이: PNG 실제 크기 기준으로 열 너비 대비 정비율 산출
+  // (편심 시트의 writeGszBlock과 동일한 getPngDims+imgRowHt 방식)
+  {
+    const rowHPt = (() => {
+      if (imgDataUrl) {
+        const b64  = imgDataUrl.replace(/^data:image\/\w+;base64,/, "");
+        const dims = getPngDims(b64);
+        if (dims) return imgRowHt(COL_SPAN, IMG_ROWS, dims.w, dims.h);
+      }
+      // fallback: 전달된 canvasH/canvasW 비율
+      return imgRowHt(COL_SPAN, IMG_ROWS, canvasW, canvasH);
+    })();
+    for (let r = imgRow1; r <= imgRow2; r++) ws.getRow(r).height = rowHPt;
   }
 
   // 이미지 영역 외곽 테두리: 병합 없이 엣지 셀 각각에 직접 적용
