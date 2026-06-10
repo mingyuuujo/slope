@@ -1823,9 +1823,7 @@ function getPreferredTheme() {
   } catch (_) {
     /* ignore */
   }
-  return window.matchMedia("(prefers-color-scheme: light)").matches
-    ? "light"
-    : "dark";
+  return "dark";
 }
 
 function applyTheme(theme) {
