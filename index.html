@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SLOPE/W 자동화</title>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("slope-web-theme");
+        if (t === "light" || t === "dark") {
+          document.documentElement.setAttribute("data-theme", t);
+        } else if (window.matchMedia("(prefers-color-scheme: light)").matches) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>SLOPE/W 자동화 도구</h1>
+      <p class="sub">
+        MohrCoulomb · S=f(Depth) · S=f(Datum) &nbsp;|&nbsp;
+        순수 HTML/CSS/JS — GSZ·DXF 처리는 브라우저에서 수행 (JSZip · dxf-parser 로컬 vendor)
+      </p>
+    </div>
+    <div class="header-actions">
+      <button type="button" class="theme-toggle" id="theme-toggle" aria-label="테마 전환" title="라이트/다크 모드 전환">
+        <span class="theme-toggle-icon theme-icon-light" aria-hidden="true">☀</span>
+        <span class="theme-toggle-icon theme-icon-dark" aria-hidden="true">☾</span>
+        <span class="theme-toggle-label" id="theme-toggle-label">라이트</span>
+      </button>
+      <span class="badge">정적</span>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button type="button" class="tab-btn active" data-tab="materials" role="tab">물성치 입력</button>
+    <button type="button" class="tab-btn" data-tab="mapping" role="tab">Region 매핑</button>
+    <button type="button" class="tab-btn" data-tab="gsz-edit" role="tab">GSZ 파라미터 편집</button>
+    <button type="button" class="tab-btn" data-tab="result" role="tab">결과 뷰어</button>
+    <button type="button" class="tab-btn" data-tab="eccentric" role="tab">편심 지지력 검토</button>
+  </nav>
+
+  <main class="shell">
+    <section id="panel-materials" class="panel active" role="tabpanel">
+      <div class="group">
+        <span class="group-title">파일 설정</span>
+        <div class="file-row">
+          <label for="mat-template">템플릿 GSZ</label>
+          <input type="file" id="mat-template" accept=".gsz,application/octet-stream" />
+        </div>
+        <div class="file-row">
+          <label for="mat-out-name">출력 파일명</label>
+          <input type="text" id="mat-out-name" placeholder="예: output_materials.gsz" />
+        </div>
+      </div>
+
+      <p class="hint">
+        모델별 편집: MohrCoulomb → 포화/습윤 단위중량, 점착력, 마찰각 &nbsp;|&nbsp;
+        SFnDepth → 포화/습윤, C_top, 증가율 &nbsp;|&nbsp;
+        SFnDatum → 포화/습윤, 증가율, 기준점착력, 기준고 · 회색 칸은 해당 모델에서 미사용입니다.
+      </p>
+
+      <div class="toolbar">
+        <button type="button" class="btn" id="mat-add-row">+ 행 추가</button>
+        <button type="button" class="btn" id="mat-del-row">− 선택 행 삭제</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table" id="mat-table">
+          <thead>
+            <tr id="mat-thead-row"></tr>
+          </thead>
+          <tbody id="mat-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="bot-row">
+        <div class="progress"><div class="progress-bar" id="mat-progress"></div></div>
+        <button type="button" class="btn" id="mat-json-export">↓ JSON 내보내기</button>
+        <button type="button" class="btn btn-success" id="mat-run">▶ GSZ에 물성치 자동 입력</button>
+      </div>
+
+      <div class="group">
+        <span class="group-title">실행 로그</span>
+        <pre class="log-box" id="mat-log"></pre>
+      </div>
+    </section>
+
+    <section id="panel-mapping" class="panel" role="tabpanel">
+      <div class="group">
+        <span class="group-title">파일 설정</span>
+        <div class="file-row">
+          <label for="map-template">템플릿 GSZ</label>
+          <input type="file" id="map-template" accept=".gsz" />
+        </div>
+        <div class="file-row">
+          <label for="map-dxf">DXF</label>
+          <input type="file" id="map-dxf" accept=".dxf" />
+        </div>
+        <div class="file-row">
+          <label for="map-out-name">출력 파일명</label>
+          <input type="text" id="map-out-name" placeholder="예: output_mapped.gsz" />
+        </div>
+      </div>
+
+      <div class="group">
+        <span class="group-title">해석 (Analysis) 설정</span>
+        <p class="hint">
+          템플릿 GSZ의 <code>Analyses/Analysis</code> 와 동일하게 여러 해석을 둘 수 있습니다.
+          라디오로 편집할 해석을 고른 뒤, 각 Region(닫힌 폴리곤 1개당 GeoStudio Region 1개)별 <code>RegionUsesMaterials</code> 를 지정합니다.
+          실행 시 지오메트리는 한 번만 만들고, 해석마다 재료 매핑만 달라집니다.
+        </p>
+        <div class="toolbar map-analysis-toolbar">
+          <button type="button" class="btn" id="map-analysis-add">+ 해석 추가</button>
+        </div>
+        <div class="table-wrap map-wrap map-analysis-wrap">
+          <table class="data-table" id="map-analysis-table">
+            <thead>
+              <tr>
+                <th style="width:10%">편집</th>
+                <th style="width:16%">Analysis ID</th>
+                <th style="width:54%">이름 (NAME)</th>
+                <th style="width:12%">삭제</th>
+              </tr>
+            </thead>
+            <tbody id="map-analysis-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="map-workspace" role="region" aria-label="재료 목록과 도면 미리보기">
+        <div class="map-workspace-materials">
+          <div class="group map-mat-workspace-group">
+            <span class="group-title">템플릿 GSZ 재료 목록</span>
+            <p class="hint">
+              템플릿 GSZ를 선택하면 Material의 ID·이름·모델이 표시됩니다.
+              <strong>재료 행을 오른쪽 도면으로 끌어놓거나</strong>, 행을 클릭한 뒤 도면에서 클릭하면 <strong>그 안의 Region</strong>에 Material이 할당됩니다
+              (중첩 시 작은 폴리곤이 우선). 아래 표와 동기화되며 <kbd>Esc</kbd>로 클릭 할당 모드를 끕니다.
+            </p>
+            <div class="table-wrap map-wrap map-mat-workspace-table">
+              <table class="data-table" id="map-mat-ref-table">
+                <thead>
+                  <tr>
+                    <th style="width:18%">Material ID</th>
+                    <th style="width:52%">이름</th>
+                    <th style="width:30%">Slope 모델</th>
+                  </tr>
+                </thead>
+                <tbody id="map-mat-ref-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="map-workspace-preview">
+          <div class="group map-preview-workspace-group">
+            <span class="group-title">DXF Region 미리보기</span>
+            <p class="hint">
+              GeoStudio에 들어가는 닫힌 영역과 동일하게(스냅·병합·경계 보정 반영) 그립니다. 중심에 <strong>R번호</strong>는 Region ID,
+              아래쪽 숫자는 할당된 Material ID입니다. 수위는 청록 <strong>@수위</strong> 점선입니다.
+            </p>
+            <div class="map-canvas-view-toolbar">
+              <span class="map-canvas-view-hint">휠: 확대/축소 · 가운데 버튼 또는 <kbd>Alt</kbd>+드래그: 이동</span>
+              <div class="map-canvas-view-btns">
+                <button type="button" class="btn map-canvas-zoom-btn" id="map-canvas-zoom-out" title="축소">−</button>
+                <button type="button" class="btn map-canvas-zoom-btn" id="map-canvas-zoom-reset" title="화면 맞춤 (1:1)">1:1</button>
+                <button type="button" class="btn map-canvas-zoom-btn" id="map-canvas-zoom-in" title="확대">+</button>
+                <span class="map-canvas-zoom-pct" id="map-canvas-zoom-pct">100%</span>
+              </div>
+            </div>
+            <div class="map-preview-wrap">
+              <div class="map-preview-main">
+                <canvas id="map-dxf-canvas" width="800" height="400" aria-label="DXF Region 미리보기"></canvas>
+              </div>
+              <aside class="map-dxf-legend" id="map-dxf-legend" aria-label="Material 색상 범례"></aside>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <button type="button" class="btn btn-primary" id="map-scan">◎ DXF 레이어 스캔 (다시 읽기)</button>
+      </div>
+
+      <div class="map-secondary-workspace" role="region" aria-label="Region 매핑 표와 수위">
+        <div class="map-secondary-col map-secondary-regions">
+          <div class="group map-region-workspace-group">
+            <span class="group-title">Region별 Material ID</span>
+            <p class="hint">
+              DXF를 선택하면 <strong>자동 스캔</strong>으로 Region 행이 채워집니다. <strong>R1, R2, …</strong>는 GeoStudio Region ID와 같습니다.
+              같은 DXF 레이어 안에 폴리곤이 여러 개여도 <strong>서로 다른 Material</strong>을 줄 수 있습니다. 0·빈칸인 Region은
+              해당 해석의 <code>RegionUsesMaterials</code> 에 포함되지 않습니다.
+            </p>
+            <div class="table-wrap map-wrap map-region-workspace-table">
+              <table class="data-table" id="map-table">
+                <thead>
+                  <tr>
+                    <th style="width:16%">Region</th>
+                    <th style="width:44%">DXF 레이어</th>
+                    <th style="width:20%">Material ID</th>
+                  </tr>
+                </thead>
+                <tbody id="map-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="map-secondary-col map-secondary-water">
+          <div class="group map-water-workspace-group">
+            <span class="group-title">수위 (SlopeItem → Entry → DataPoints)</span>
+            <p class="hint">
+              모든 해석에 <strong>동일한</strong> 수위 꺾은선이 기록됩니다. GeoStudio와 같이
+              <code>DataPoint</code> 의 X·Y(m)를 순서대로 나열합니다.
+              DXF에 레이어 <code>@수위</code> 의 폴리라인이 있으면 스캔 시 표에 자동 기입되며,
+              표를 고치면 미리보기의 청록 점선(<strong>@수위</strong>)으로 바로 반영됩니다.
+              (실제 DXF 바이너리는 수정하지 않습니다.)
+            </p>
+            <div class="toolbar map-water-toolbar">
+              <button type="button" class="btn" id="map-water-add-row">+ 점 추가</button>
+              <button type="button" class="btn" id="map-water-from-dxf">
+                @수위 레이어 다시 불러오기
+              </button>
+            </div>
+            <div class="table-wrap map-wrap map-water-wrap map-water-workspace-table">
+              <table class="data-table" id="map-water-table">
+                <thead>
+                  <tr>
+                    <th style="width:12%">#</th>
+                    <th style="width:38%">X (m)</th>
+                    <th style="width:38%">Y (m)</th>
+                    <th style="width:12%">삭제</th>
+                  </tr>
+                </thead>
+                <tbody id="map-water-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bot-row">
+        <div class="progress"><div class="progress-bar" id="map-progress"></div></div>
+        <button type="button" class="btn btn-success" id="map-run">▶ Region 자동 매핑 실행</button>
+      </div>
+
+      <div class="group">
+        <span class="group-title">실행 로그</span>
+        <pre class="log-box" id="map-log"></pre>
+      </div>
+    </section>
+
+    <!-- ════════ GSZ 파라미터 편집 패널 ════════ -->
+    <section id="panel-gsz-edit" class="panel" role="tabpanel">
+
+      <div class="group">
+        <span class="group-title">파일 설정</span>
+        <div class="file-row">
+          <label for="gszedit-file">GSZ 파일</label>
+          <input type="file" id="gszedit-file" accept=".gsz,application/octet-stream" />
+        </div>
+        <div class="file-row">
+          <label for="gszedit-out-name">출력 파일명</label>
+          <input type="text" id="gszedit-out-name" placeholder="예: output_edited.gsz" />
+        </div>
+      </div>
+
+      <div class="group">
+        <span class="group-title">전역 설정</span>
+        <div class="gszedit-global-row">
+          <label for="gszedit-unit-ww">단위 수중무게 (kN/m³)</label>
+          <input type="text" id="gszedit-unit-ww" class="gszedit-short-inp" placeholder="10.3" />
+        </div>
+      </div>
+
+      <div class="group">
+        <span class="group-title">해석별 파라미터</span>
+        <p class="hint" id="gszedit-hint">GSZ 파일을 선택하면 파라미터가 표시됩니다. 이전에 저장된 상태가 있으면 자동으로 복원합니다.</p>
+
+        <!-- 해석 선택 탭 -->
+        <div class="gszedit-analysis-tabs" id="gszedit-analysis-tabs"></div>
+
+        <!-- 선택된 해석 편집 영역 -->
+        <div id="gszedit-analysis-editor" class="gszedit-analysis-editor" style="display:none">
+
+          <!-- 해석명 -->
+          <div class="gszedit-param-row">
+            <label for="gszedit-name">해석명</label>
+            <input type="text" id="gszedit-name" class="gszedit-long-inp" />
+          </div>
+
+          <!-- 수평지진계수 -->
+          <div class="gszedit-param-row">
+            <label for="gszedit-seismic-h">수평지진계수 kh</label>
+            <input type="text" id="gszedit-seismic-h" class="gszedit-short-inp" placeholder="0 또는 빈칸(없음)" />
+          </div>
+
+          <!-- 3컬럼: 상재압력 · 집중하중 · 수위선 -->
+          <div class="gszedit-row3-grid">
+
+            <!-- 상재압력 (PressureLines) -->
+            <div class="gszedit-subsection">
+              <span class="gszedit-subsection-title">상재압력 (PressureLines)</span>
+              <p class="hint">구조체 저면 또는 사면에 작용하는 면압력(kPa). ID는 변경 불가, 압력값만 수정합니다.</p>
+              <div class="table-wrap gszedit-table-wrap">
+                <table class="data-table">
+                  <thead><tr><th style="width:30%">ID</th><th>압력 (kPa)</th></tr></thead>
+                  <tbody id="gszedit-pressure-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- 집중하중 (LineLoadPoints) -->
+            <div class="gszedit-subsection">
+              <span class="gszedit-subsection-title">집중하중 / 상재하중 (LineLoadPoints)</span>
+              <p class="hint">특정 DataPoint에 작용하는 선하중(kN/m). 방향은 GeoStudio 각도 기준(°, 180° = 아래).</p>
+              <div class="table-wrap gszedit-table-wrap">
+                <table class="data-table">
+                  <thead><tr><th style="width:24%">ID</th><th>크기 (kN/m)</th><th>방향 (°)</th></tr></thead>
+                  <tbody id="gszedit-lineload-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- 수위 좌표 -->
+            <div class="gszedit-subsection">
+              <span class="gszedit-subsection-title">수위선 좌표 (PiezometricLine)</span>
+              <p class="hint">
+                <code>SlopeItem → Entry → PiezometricLine</code> DataPoint X·Y 좌표 수정.
+                DP 번호는 변경 불가입니다.
+              </p>
+              <div class="table-wrap gszedit-table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th style="width:22%">DP#</th>
+                      <th>X (m)</th>
+                      <th>Y (m)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="gszedit-water-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+          </div><!-- /gszedit-row3-grid -->
+
+          <!-- 슬립면 탐색 범위 (SlipEntryExit) -->
+          <div class="gszedit-subsection">
+            <span class="gszedit-subsection-title">슬립면 탐색 범위 (Entry / Exit)</span>
+            <p class="hint">
+              진입(Entry) · 탈출(Exit) 구간 좌표와 증분값을 설정합니다.
+              진입 모드(<strong><span id="gszedit-left-mode-label"></span></strong>)는 GSZ 원본에서 읽어온 모드를 유지합니다.
+            </p>
+
+            <div class="gszedit-slip-grid">
+              <!-- 좌측 진입 -->
+              <div class="gszedit-slip-section">
+                <div class="gszedit-slip-section-title">진입 (좌측)</div>
+                <div class="gszedit-slip-row">
+                  <span class="gszedit-slip-label">시작점 X</span>
+                  <input type="text" id="gszedit-left-l-x" class="gszedit-coord-inp" />
+                </div>
+                <div class="gszedit-slip-row">
+                  <span class="gszedit-slip-label">시작점 Y</span>
+                  <input type="text" id="gszedit-left-l-y" class="gszedit-coord-inp" />
+                </div>
+                <!-- Range 모드 전용 -->
+                <div id="gszedit-left-range-rows">
+                  <div class="gszedit-slip-row">
+                    <span class="gszedit-slip-label">끝점 X</span>
+                    <input type="text" id="gszedit-left-r-x" class="gszedit-coord-inp" />
+                  </div>
+                  <div class="gszedit-slip-row">
+                    <span class="gszedit-slip-label">끝점 Y</span>
+                    <input type="text" id="gszedit-left-r-y" class="gszedit-coord-inp" />
+                  </div>
+                  <div class="gszedit-slip-row">
+                    <span class="gszedit-slip-label">분할 수 (LeftInc)</span>
+                    <input type="text" id="gszedit-left-inc" class="gszedit-coord-inp" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- 우측 탈출 -->
+              <div class="gszedit-slip-section">
+                <div class="gszedit-slip-section-title">탈출 (우측)</div>
+                <div class="gszedit-slip-row">
+                  <span class="gszedit-slip-label">시작점 X</span>
+                  <input type="text" id="gszedit-right-l-x" class="gszedit-coord-inp" />
+                </div>
+                <div class="gszedit-slip-row">
+                  <span class="gszedit-slip-label">시작점 Y</span>
+                  <input type="text" id="gszedit-right-l-y" class="gszedit-coord-inp" />
+                </div>
+                <div class="gszedit-slip-row">
+                  <span class="gszedit-slip-label">끝점 X</span>
+                  <input type="text" id="gszedit-right-r-x" class="gszedit-coord-inp" />
+                </div>
+                <div class="gszedit-slip-row">
+                  <span class="gszedit-slip-label">끝점 Y</span>
+                  <input type="text" id="gszedit-right-r-y" class="gszedit-coord-inp" />
+                </div>
+                <div class="gszedit-slip-row">
+                  <span class="gszedit-slip-label">분할 수 (RightInc)</span>
+                  <input type="text" id="gszedit-right-inc" class="gszedit-coord-inp" />
+                </div>
+              </div>
+
+              <!-- 반경 -->
+              <div class="gszedit-slip-section">
+                <div class="gszedit-slip-section-title">반경 증분</div>
+                <div class="gszedit-slip-row">
+                  <span class="gszedit-slip-label">RadiusInc</span>
+                  <input type="text" id="gszedit-radius-inc" class="gszedit-coord-inp" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2컬럼: 리즌 매핑 (좌) + 물성치 편집 (우) -->
+          <div class="gszedit-mat-region-layout">
+
+            <!-- 좌: 리즌 매핑 -->
+            <div class="gszedit-mat-region-col">
+              <div class="gszedit-subsection">
+                <span class="gszedit-subsection-title">리즌 매핑 (Region ↔ 물성치)</span>
+                <p class="hint">각 리즌에 할당된 물성치를 캔버스로 확인하고 수정합니다. 리즌 클릭 시 강조 표시됩니다. 물성치 미할당 리즌은 점선 테두리로 표시됩니다.</p>
+                <div class="gszedit-canvas-wrap">
+                  <canvas id="gszedit-region-canvas" class="gszedit-region-canvas"></canvas>
+                </div>
+                <div class="gszedit-canvas-legend" id="gszedit-canvas-legend"></div>
+                <div class="table-wrap gszedit-table-wrap gszedit-region-table-wrap">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th style="width:30%">리즌 ID</th>
+                        <th>물성치</th>
+                      </tr>
+                    </thead>
+                    <tbody id="gszedit-region-map-tbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- 우: 물성치 편집 (전역) -->
+            <div class="gszedit-mat-region-col">
+              <div class="gszedit-subsection">
+                <span class="gszedit-subsection-title">물성치 편집 (전역)</span>
+                <p class="hint" id="gszedit-mat-hint">GSZ 파일을 로드하면 물성치 목록이 표시됩니다.</p>
+                <div class="gszedit-mat-scroll">
+                  <table class="data-table gszedit-mat-table" id="gszedit-mat-table">
+                    <thead>
+                      <tr>
+                        <th style="width:32px">ID</th>
+                        <th style="min-width:120px">이름</th>
+                        <th style="min-width:80px">모델</th>
+                        <th style="width:76px">γ<br>(kN/m³)</th>
+                        <th style="width:76px">c'<br>(kPa)</th>
+                        <th style="width:66px">φ'<br>(°)</th>
+                        <th style="width:76px">γd<br>(kN/m³)</th>
+                        <th style="width:76px">c상단<br>(kPa)</th>
+                        <th style="width:76px">c증가율<br>(kPa/m)</th>
+                      </tr>
+                    </thead>
+                    <tbody id="gszedit-mat-tbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /gszedit-mat-region-layout -->
+
+        </div><!-- /gszedit-analysis-editor -->
+      </div>
+
+      <div class="bot-row">
+        <div class="progress"><div class="progress-bar" id="gszedit-progress"></div></div>
+        <button type="button" class="btn btn-success" id="gszedit-run" disabled>▶ GSZ 저장 및 다운로드</button>
+      </div>
+
+      <div class="group">
+        <span class="group-title">실행 로그</span>
+        <pre class="log-box" id="gszedit-log"></pre>
+      </div>
+
+    </section>
+
+    <!-- ════════ 결과 뷰어 패널 ════════ -->
+    <section id="panel-result" class="panel" role="tabpanel">
+
+      <div class="group">
+        <span class="group-title">해석 결과 파일 설정</span>
+        <div class="file-row">
+          <label for="rv-file">해석 완료 GSZ</label>
+          <input type="file" id="rv-file" accept=".gsz,application/octet-stream" />
+          <span class="rv-file-name" id="rv-file-name" style="margin-left:10px;color:var(--muted);font-size:0.85em"></span>
+        </div>
+        <div class="file-row" style="align-items:center;gap:12px">
+          <label for="rv-analysis-select">해석 선택</label>
+          <select id="rv-analysis-select" class="rv-select">
+            <option value="">— GSZ 파일을 먼저 업로드하세요 —</option>
+          </select>
+          <span class="rv-status" id="rv-status" style="color:var(--muted);font-size:0.85em"></span>
+        </div>
+        <div class="file-row" style="align-items:center;gap:8px;margin-top:2px">
+          <label for="rv-view-region" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:0.9em">
+            <input type="checkbox" id="rv-view-region" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
+            <span>View Region — 동일 물성 인접 리즌 경계 통합</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 캔버스 + 결과 패널 -->
+      <div class="rv-workspace">
+        <div class="rv-canvas-wrap">
+          <canvas id="rv-canvas" class="rv-canvas"></canvas>
+        </div>
+        <div class="rv-sidebar">
+          <div class="group" style="flex:1">
+            <span class="group-title">해석 결과</span>
+            <div id="rv-info-panel" class="rv-info-panel">
+              <span style="color:var(--muted);font-size:0.85em">GSZ 파일을 업로드하면 결과가 표시됩니다.</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+            <button type="button" class="btn btn-primary" id="rv-png-btn">↓ PNG 다운로드</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 전체 결과 테이블 -->
+      <div class="group" style="margin-top:16px">
+        <span class="group-title">전체 해석 결과 요약</span>
+        <div class="table-wrap">
+          <table class="data-table" id="rv-result-table">
+            <thead>
+              <tr>
+                <th style="width:200px">해석명</th>
+                <th style="width:90px">케이스</th>
+                <th style="width:70px">FOS</th>
+                <th style="width:70px">기준FOS</th>
+                <th style="width:55px">판정</th>
+                <th style="width:70px">임계SlipID</th>
+                <th style="width:80px">중심X (m)</th>
+                <th style="width:70px">반경 (m)</th>
+              </tr>
+            </thead>
+            <tbody id="rv-result-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 물성치 JSON 업로드 -->
+      <div class="group" id="rv-mat-json-group">
+        <span class="group-title">물성치 JSON 업로드 (선택)</span>
+        <p class="hint">
+          물성치 입력탭에서 내보낸 JSON을 업로드하면 해당 물성치가 Excel 설계정수 테이블에 사용됩니다.
+          업로드하지 않으면 GSZ에서 자동 추출합니다.
+        </p>
+        <div class="file-row" style="align-items:center;gap:10px">
+          <label for="rv-mat-json">물성치 JSON</label>
+          <input type="file" id="rv-mat-json" accept=".json,application/json" />
+          <span id="rv-mat-json-name" style="color:var(--muted);font-size:0.85em"></span>
+          <button type="button" class="btn" id="rv-mat-json-clear" style="display:none">✕ 초기화</button>
+        </div>
+        <div id="rv-mat-category-wrap" style="display:none;margin-top:10px">
+          <p class="hint">각 재료가 사용재료 설계정수인지 원지반 설계정수인지 기초처리 설계정수인지 선택하세요.</p>
+          <div class="table-wrap">
+            <table class="data-table" id="rv-mat-category-table">
+              <thead>
+                <tr>
+                  <th style="width:150px">재료명</th>
+                  <th style="width:110px">모델</th>
+                  <th style="width:80px">γt (kN/m³)</th>
+                  <th style="width:85px">γsat (kN/m³)</th>
+                  <th style="width:65px">Φ (deg)</th>
+                  <th style="width:95px">c (kN/m²)</th>
+                  <th style="width:270px;white-space:nowrap">구분</th>
+                </tr>
+              </thead>
+              <tbody id="rv-mat-category-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 구조계산서 Excel 생성 -->
+      <div class="group rv-excel-group">
+        <span class="group-title">구조계산서 Excel 생성</span>
+        <p class="hint">
+          GSZ 파일 업로드 후 각 케이스(시공시/상시/지진시)에 사용할 해석을 직접 선택하세요.
+          선택하지 않은 케이스는 Excel에 출력되지 않습니다.
+        </p>
+
+        <!-- 케이스별 해석 선택 -->
+        <div class="rv-case-select-grid">
+          <div class="rv-case-select-row">
+            <span class="rv-case-label">시공시 해석</span>
+            <select id="rv-case-construction" class="rv-select rv-case-sel">
+              <option value="">선택 안함</option>
+            </select>
+          </div>
+          <div class="rv-case-select-row">
+            <span class="rv-case-label">상시 해석</span>
+            <select id="rv-case-normal" class="rv-select rv-case-sel">
+              <option value="">선택 안함</option>
+            </select>
+          </div>
+          <div class="rv-case-select-row">
+            <span class="rv-case-label">지진시 해석</span>
+            <select id="rv-case-seismic" class="rv-select rv-case-sel">
+              <option value="">선택 안함</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="rv-excel-inputs" style="margin-top:12px">
+          <div class="file-row">
+            <label for="rv-excel-project">프로젝트명</label>
+            <input type="text" id="rv-excel-project" class="rv-excel-inp" placeholder="예: NO.17 휴식부두" />
+          </div>
+          <div class="file-row">
+            <label for="rv-excel-structure">구조물명</label>
+            <input type="text" id="rv-excel-structure" class="rv-excel-inp" placeholder="예: 가호안(1)" />
+          </div>
+          <div class="file-row">
+            <label for="rv-excel-section">단면명</label>
+            <input type="text" id="rv-excel-section" class="rv-excel-inp" placeholder="예: I-I'" />
+          </div>
+        </div>
+        <div class="bot-row" style="margin-top:12px">
+          <button type="button" class="btn btn-success" id="rv-excel-btn">▶ Excel 구조계산서 다운로드</button>
+        </div>
+      </div>
+
+      <!-- 편심하중 검토 시트 -->
+      <div class="group rv-eccentric-group">
+        <span class="group-title">편심하중(Bishop법) 검토 포함</span>
+        <div class="file-row" style="margin-bottom:4px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="rv-eccentric-enable" />
+            <span>편심하중 검토 시트를 Excel에 추가</span>
+          </label>
+        </div>
+
+        <div id="rv-eccentric-inputs" style="display:none">
+          <p class="hint" style="margin-top:6px">편심(상시)/편심(지진시) 해석 결과와 기초 입력값을 입력하세요.</p>
+
+          <!-- 편심 케이스 해석 선택 -->
+          <div class="rv-case-select-grid" style="margin-bottom:10px">
+            <div class="rv-case-select-row">
+              <span class="rv-case-label">상시(편심) 해석</span>
+              <select id="rv-case-eccentric-normal" class="rv-select rv-case-sel-ecc">
+                <option value="">선택 안함</option>
+              </select>
+            </div>
+            <div class="rv-case-select-row">
+              <span class="rv-case-label">지진시(편심) 해석</span>
+              <select id="rv-case-eccentric-seismic" class="rv-select rv-case-sel-ecc">
+                <option value="">선택 안함</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 기초 조건 입력 -->
+          <div class="rv-ecc-section-label" style="display:flex;align-items:center;justify-content:space-between">
+            <span>기초 조건</span>
+            <span>
+              <input type="file" id="rv-ecc-json-file" accept=".json" style="display:none" />
+              <button type="button" id="rv-ecc-import-json" class="btn-sm">기초조건 JSON 가져오기</button>
+            </span>
+          </div>
+          <div class="rv-ecc-grid">
+            <div class="rv-ecc-field">
+              <label for="rv-ecc-B">기초폭 B (m)</label>
+              <input type="number" id="rv-ecc-B" class="rv-ecc-inp" step="0.1" placeholder="예: 13" />
+            </div>
+            <div class="rv-ecc-field">
+              <label for="rv-ecc-D">마운드 두께 D (m)</label>
+              <input type="number" id="rv-ecc-D" class="rv-ecc-inp" step="0.1" placeholder="예: 1" />
+            </div>
+            <div class="rv-ecc-field">
+              <label for="rv-ecc-gamma">사석의 포화단위중량 γ<sub>sat</sub> (kN/m³)</label>
+              <input type="number" id="rv-ecc-gamma" class="rv-ecc-inp" step="0.1" value="20" placeholder="예: 20" />
+            </div>
+            <div class="rv-ecc-field">
+              <label for="rv-ecc-gammaW">물의 단위중량 γ<sub>W</sub> (kN/m³)</label>
+              <input type="number" id="rv-ecc-gammaW" class="rv-ecc-inp" step="0.1" value="10.3" placeholder="10.3" />
+            </div>
+          </div>
+
+          <!-- 상시 하중 -->
+          <div class="rv-ecc-section-label">상시 하중</div>
+          <div class="rv-ecc-grid">
+            <div class="rv-ecc-field">
+              <label for="rv-ecc-Vn">연직력 ΣV (kN/m)</label>
+              <input type="number" id="rv-ecc-Vn" class="rv-ecc-inp" step="0.01" />
+            </div>
+            <div class="rv-ecc-field">
+              <label for="rv-ecc-Hn">수평력 ΣH (kN/m)</label>
+              <input type="number" id="rv-ecc-Hn" class="rv-ecc-inp" step="0.01" />
+            </div>
+            <div class="rv-ecc-field">
+              <label for="rv-ecc-Mvn">저항모멘트 ΣMv (kN·m/m)</label>
+              <input type="number" id="rv-ecc-Mvn" class="rv-ecc-inp" step="0.01" />
+            </div>
+            <div class="rv-ecc-field">
+              <label for="rv-ecc-Mhn">전도모멘트 ΣMh (kN·m/m)</label>
+              <input type="number" id="rv-ecc-Mhn" class="rv-ecc-inp" step="0.01" />
+            </div>
+          </div>
+
+          <!-- 지진시 하중 -->
+          <div class="rv-ecc-section-label">지진시 하중</div>
+          <div class="rv-ecc-grid">
+            <div class="rv-ecc-field">
+              <label for="rv-ecc-Ve">연직력 ΣV (kN/m)</label>
+              <input type="number" id="rv-ecc-Ve" class="rv-ecc-inp" step="0.01" />
+            </div>
+            <div class="rv-ecc-field">
+              <label for="rv-ecc-He">수평력 ΣH (kN/m)</label>
+              <input type="number" id="rv-ecc-He" class="rv-ecc-inp" step="0.01" />
+            </div>
+            <div class="rv-ecc-field">
+              <label for="rv-ecc-Mve">저항모멘트 ΣMv (kN·m/m)</label>
+              <input type="number" id="rv-ecc-Mve" class="rv-ecc-inp" step="0.01" />
+            </div>
+            <div class="rv-ecc-field">
+              <label for="rv-ecc-Mhe">전도모멘트 ΣMh (kN·m/m)</label>
+              <input type="number" id="rv-ecc-Mhe" class="rv-ecc-inp" step="0.01" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ─── 편심 지지력 검토 탭 ─────────────────────────────────── -->
+    <section id="panel-eccentric" class="panel" role="tabpanel">
+      <div class="ecc-checker-wrap">
+
+        <!-- 상단: 입력 + 모식도 2열 -->
+        <div class="ecc-top-layout">
+
+          <!-- 왼쪽: 기초조건 + 하중 입력 -->
+          <div class="ecc-inputs-col">
+            <div class="ecc-card">
+              <div class="ecc-card-title">기초 조건</div>
+              <div class="ecc-input-grid">
+                <div class="ecc-field">
+                  <label for="ecc-tab-B">기초폭 B (m)</label>
+                  <input type="number" id="ecc-tab-B" class="ecc-inp" step="0.1" placeholder="예: 13" />
+                </div>
+                <div class="ecc-field">
+                  <label for="ecc-tab-D">마운드 두께 D (m)</label>
+                  <input type="number" id="ecc-tab-D" class="ecc-inp" step="0.1" placeholder="예: 1" />
+                </div>
+                <div class="ecc-field">
+                  <label for="ecc-tab-gammaw">물의 단위중량 γ<sub>W</sub> (kN/m³)</label>
+                  <input type="number" id="ecc-tab-gammaw" class="ecc-inp" step="0.1" value="10.3" />
+                </div>
+                <div class="ecc-field">
+                  <label for="ecc-tab-gammasat">사석 포화단위중량 γ<sub>sat</sub> (kN/m³)</label>
+                  <input type="number" id="ecc-tab-gammasat" class="ecc-inp" step="0.1" value="20" />
+                </div>
+              </div>
+              <div class="ecc-derived-row">
+                <span class="ecc-derived-label">사석 수중단위중량 γ' (kN/m³)</span>
+                <span class="ecc-derived-val" id="ecc-tab-gammaprime">-</span>
+              </div>
+            </div>
+
+            <div class="ecc-card ecc-load-card ecc-load-normal">
+              <div class="ecc-card-title">상시 하중</div>
+              <div class="ecc-input-grid">
+                <div class="ecc-field">
+                  <label for="ecc-tab-Vn">연직력 ΣV (kN/m)</label>
+                  <input type="number" id="ecc-tab-Vn" class="ecc-inp" step="0.01" />
+                </div>
+                <div class="ecc-field">
+                  <label for="ecc-tab-Hn">수평력 ΣH (kN/m)</label>
+                  <input type="number" id="ecc-tab-Hn" class="ecc-inp" step="0.01" />
+                </div>
+                <div class="ecc-field">
+                  <label for="ecc-tab-Mvn">저항모멘트 ΣMv (kN·m/m)</label>
+                  <input type="number" id="ecc-tab-Mvn" class="ecc-inp" step="0.01" />
+                </div>
+                <div class="ecc-field">
+                  <label for="ecc-tab-Mhn">전도모멘트 ΣMh (kN·m/m)</label>
+                  <input type="number" id="ecc-tab-Mhn" class="ecc-inp" step="0.01" />
+                </div>
+              </div>
+            </div>
+
+            <div class="ecc-card ecc-load-card ecc-load-seismic">
+              <div class="ecc-card-title">지진시 하중</div>
+              <div class="ecc-input-grid">
+                <div class="ecc-field">
+                  <label for="ecc-tab-Ve">연직력 ΣV (kN/m)</label>
+                  <input type="number" id="ecc-tab-Ve" class="ecc-inp" step="0.01" />
+                </div>
+                <div class="ecc-field">
+                  <label for="ecc-tab-He">수평력 ΣH (kN/m)</label>
+                  <input type="number" id="ecc-tab-He" class="ecc-inp" step="0.01" />
+                </div>
+                <div class="ecc-field">
+                  <label for="ecc-tab-Mve">저항모멘트 ΣMv (kN·m/m)</label>
+                  <input type="number" id="ecc-tab-Mve" class="ecc-inp" step="0.01" />
+                </div>
+                <div class="ecc-field">
+                  <label for="ecc-tab-Mhe">전도모멘트 ΣMh (kN·m/m)</label>
+                  <input type="number" id="ecc-tab-Mhe" class="ecc-inp" step="0.01" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 오른쪽: 모식도 -->
+          <div class="ecc-diagram-col">
+            <div class="ecc-card ecc-diagram-card">
+              <div class="ecc-card-title">검토 모식도</div>
+              <div class="ecc-diagram-wrap">
+                <img src="template/image/web_image1.png" alt="편심 지지력 검토 모식도" class="ecc-diagram-img" />
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 하단: 계산 결과 전체 폭 -->
+        <div class="ecc-card ecc-result-card">
+          <div class="ecc-result-header">
+            <div class="ecc-card-title">계산 결과 <span class="ecc-auto-badge">자동계산</span></div>
+            <div class="ecc-btn-group">
+              <input type="file" id="ecc-tab-import-file" accept=".json" style="display:none">
+              <button type="button" id="ecc-tab-import" class="ecc-import-btn">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M7 13V5M4 8l3-3 3 3M2 3H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                JSON 가져오기
+              </button>
+              <button type="button" id="ecc-tab-export" class="ecc-export-btn">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                JSON 내보내기
+              </button>
+            </div>
+          </div>
+          <div class="ecc-result-wrap">
+            <table class="ecc-result-table">
+              <thead>
+                <tr>
+                  <th class="ecc-th-label">구분</th>
+                  <th class="ecc-th-normal">상시</th>
+                  <th class="ecc-th-seismic">지진시</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="ecc-group-start">
+                  <td class="ecc-row-label ecc-row-group">지반반력 산정</td>
+                  <td></td><td></td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">X</td>
+                  <td id="ecc-res-n-X">-</td>
+                  <td id="ecc-res-e-X">-</td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">e — 편심 (m)</td>
+                  <td id="ecc-res-n-e">-</td>
+                  <td id="ecc-res-e-e">-</td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">하중분포</td>
+                  <td id="ecc-res-n-dist">-</td>
+                  <td id="ecc-res-e-dist">-</td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">p1 (kN/m²)</td>
+                  <td id="ecc-res-n-p1">-</td>
+                  <td id="ecc-res-e-p1">-</td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">p2 (kN/m²)</td>
+                  <td id="ecc-res-n-p2">-</td>
+                  <td id="ecc-res-e-p2">-</td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">b — 하중분포폭 (m)</td>
+                  <td id="ecc-res-n-b">-</td>
+                  <td id="ecc-res-e-b">-</td>
+                </tr>
+                <tr class="ecc-group-start">
+                  <td class="ecc-row-label ecc-row-group">지반반력 (편심경사하중법)</td>
+                  <td></td><td></td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">α — 편심경사각 (°)</td>
+                  <td id="ecc-res-n-alpha">-</td>
+                  <td id="ecc-res-e-alpha">-</td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">L — 합력의 분포폭 (m)</td>
+                  <td id="ecc-res-n-L">-</td>
+                  <td id="ecc-res-e-L">-</td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">p1' — 지반반력 (kN/m²)</td>
+                  <td id="ecc-res-n-p1p">-</td>
+                  <td id="ecc-res-e-p1p">-</td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">p2' — 지반반력 (kN/m²)</td>
+                  <td id="ecc-res-n-p2p">-</td>
+                  <td id="ecc-res-e-p2p">-</td>
+                </tr>
+                <tr class="ecc-group-start">
+                  <td class="ecc-row-label ecc-row-group">환산등분포 하중</td>
+                  <td></td><td></td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">q — 환산등분포하중 (kN/m²)</td>
+                  <td id="ecc-res-n-q">-</td>
+                  <td id="ecc-res-e-q">-</td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">H (kN/m)</td>
+                  <td id="ecc-res-n-H">-</td>
+                  <td id="ecc-res-e-H">-</td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">b' (m)</td>
+                  <td id="ecc-res-n-bPrime">-</td>
+                  <td id="ecc-res-e-bPrime">-</td>
+                </tr>
+                <tr>
+                  <td class="ecc-row-label">2b' (m)</td>
+                  <td id="ecc-res-n-twoBp">-</td>
+                  <td id="ecc-res-e-twoBp">-</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer-note">
+    Vercel 등 정적 호스팅에 이 폴더(<code>slope/web</code>)를 그대로 올리면 됩니다.
+    JSZip·dxf-parser는 <code>vendor/</code>에 포함되어 있어 CDN 없이 동작합니다.
+    로컬에서 파일을 직접 열면(<code>file://</code>) 모듈/CORS 제한으로 동작하지 않을 수 있으니
+    <code>npx serve .</code> 로 같은 폴더를 띄워 테스트하세요.
+  </footer>
+
+  <script src="vendor/jszip.min.js"></script>
+  <script src="vendor/dxf-parser.js"></script>
+  <script src="vendor/exceljs.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+  <script src="js/eccentric-checker.js"></script>
+</body>
+</html>
