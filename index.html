@@ -505,18 +505,37 @@
         <div class="file-row" style="align-items:center;gap:8px;margin-top:4px">
           <label for="rv-fix-height-enable" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:0.9em">
             <input type="checkbox" id="rv-fix-height-enable" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
-            <span>이미지 높이 고정</span>
+            <span>이미지 높이 변경</span>
           </label>
           <input type="number" id="rv-fix-height-val" min="50" max="2000" step="10" placeholder="px"
             style="display:none;width:72px;padding:2px 6px;font-size:0.88em;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px" />
           <span id="rv-fix-height-hint" style="display:none;font-size:0.8em;color:var(--muted)">px — 단면 하단부터 잘림 / Excel PNG도 동일 비율 적용</span>
+        </div>
+        <div class="file-row" style="align-items:center;gap:8px;margin-top:4px">
+          <label for="rv-fix-width-enable" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:0.9em">
+            <input type="checkbox" id="rv-fix-width-enable" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
+            <span>이미지 너비 변경</span>
+          </label>
+          <input type="number" id="rv-fix-width-val" min="200" max="4000" step="10" placeholder="px"
+            style="display:none;width:72px;padding:2px 6px;font-size:0.88em;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px" />
+          <span style="font-size:0.8em;color:var(--muted)">— 드래그 핸들로도 조절 가능</span>
         </div>
       </div>
 
       <!-- 캔버스 + 결과 패널 -->
       <div class="rv-workspace">
         <div class="rv-canvas-wrap">
-          <canvas id="rv-canvas" class="rv-canvas"></canvas>
+          <div id="rv-canvas-clip" class="rv-canvas-clip">
+            <canvas id="rv-canvas" class="rv-canvas"></canvas>
+          </div>
+          <div id="rv-shadow-l" class="rv-crop-shadow" style="display:none"></div>
+          <div id="rv-shadow-r" class="rv-crop-shadow" style="display:none"></div>
+          <div id="rv-resize-overlay" class="rv-resize-overlay" style="display:none">
+            <div class="rv-handle rv-handle-l"  data-dir="l"></div>
+            <div class="rv-handle rv-handle-r"  data-dir="r"></div>
+            <div class="rv-handle rv-handle-b"  data-dir="b"></div>
+            <div class="rv-handle rv-handle-br" data-dir="br"></div>
+          </div>
         </div>
         <div class="rv-sidebar">
           <div class="group" style="flex:1">
@@ -533,7 +552,10 @@
 
       <!-- 전체 결과 테이블 -->
       <div class="group" style="margin-top:16px">
-        <span class="group-title">전체 해석 결과 요약</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span class="group-title" style="margin-bottom:0">전체 해석 결과 요약</span>
+          <button type="button" id="rv-copy-table-btn" class="btn btn-sm" style="font-size:0.8em;padding:3px 10px">복사</button>
+        </div>
         <div class="table-wrap">
           <table class="data-table" id="rv-result-table">
             <thead>

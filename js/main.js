@@ -99,7 +99,7 @@ const MODEL_EDIT_COLS = {
   SFnDatum: new Set([3, 4, 8, 9, 10]),
 };
 
-const BASE_EDIT_COLS = new Set([0, 1, COL_COLOR]);
+const BASE_EDIT_COLS = new Set([1, COL_COLOR]);
 
 const MAT_KEYS = [
   "id",
@@ -771,6 +771,13 @@ function createMatRow(d) {
     } else if (key === "color") {
       const api = wireColorCell(td, d.color || "");
       cells[COL_COLOR] = api;
+    } else if (key === "id") {
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.readOnly = true;
+      inp.value = d[key] != null ? String(d[key]) : "";
+      inp.className = "mat-id-cell";
+      td.appendChild(inp);
     } else {
       const inp = document.createElement("input");
       inp.type = "text";
@@ -854,6 +861,15 @@ function initMaterialsTable() {
     tbody.appendChild(tr);
     applyRowEditPolicy(tr);
   });
+  renumberMatRows();
+}
+
+function renumberMatRows() {
+  const tbody = document.getElementById("mat-tbody");
+  tbody.querySelectorAll("tr").forEach((tr, i) => {
+    const idInp = tr.querySelector('td[data-col="0"] input');
+    if (idInp) idInp.value = String(i + 1);
+  });
 }
 
 function matAddRow() {
@@ -874,17 +890,19 @@ function matAddRow() {
   });
   tbody.appendChild(tr);
   applyRowEditPolicy(tr);
+  renumberMatRows();
 }
 
 function matDelSelectedRow() {
   const tbody = document.getElementById("mat-tbody");
-  const row = tbody.querySelector("tr[data-selected]");
-  if (!row) {
-    toast("삭제할 행을 한 번 클릭해 선택한 뒤 다시 눌러 주세요.", false);
+  const selected = tbody.querySelectorAll("tr[data-selected]");
+  if (!selected.length) {
+    toast("삭제할 행을 선택(Ctrl+클릭으로 다중 선택)한 뒤 눌러 주세요.", false);
     return;
   }
-  row.remove();
+  selected.forEach((r) => r.remove());
   if (!tbody.querySelector("tr")) matAddRow();
+  else renumberMatRows();
 }
 
 async function runMaterials() {
@@ -1952,8 +1970,13 @@ document.addEventListener("DOMContentLoaded", () => {
   matBody.addEventListener("click", (e) => {
     const tr = e.target.closest("tr");
     if (!tr || !matBody.contains(tr)) return;
-    matBody.querySelectorAll("tr").forEach((r) => r.removeAttribute("data-selected"));
-    tr.setAttribute("data-selected", "1");
+    if (e.ctrlKey || e.metaKey) {
+      if (tr.hasAttribute("data-selected")) tr.removeAttribute("data-selected");
+      else tr.setAttribute("data-selected", "1");
+    } else {
+      matBody.querySelectorAll("tr").forEach((r) => r.removeAttribute("data-selected"));
+      tr.setAttribute("data-selected", "1");
+    }
   });
 
   document.getElementById("mat-add-row").addEventListener("click", matAddRow);

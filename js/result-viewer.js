@@ -27,8 +27,10 @@ let rvCaseOverrides = {};
 // View Region 토글 상태
 let rvViewRegion = false;
 
-// 이미지 높이 고정 옵션 (null = 자동)
+// 이미지 높이/너비 고정 옵션 (null = 자동)
 let rvFixedHeight = null;
+let rvFixedWidth  = null;   // 오른쪽 경계 (full canvas 기준 px), null = 자동
+let rvCropLeft    = 0;      // 왼쪽 크롭 px (0 = 자르지 않음)
 
 // ─── DOM 헬퍼 ─────────────────────────────────────────────────
 const $  = (id) => document.getElementById(id);
@@ -986,9 +988,139 @@ async function updateCanvas(idx) {
     ? { centerX: result.centerX, centerY: result.centerY, radius: result.radius, fos: result.fos }
     : null;
 
+  // 크롭 모드: canvas는 naturalW 전체 렌더 → 그림자 div가 잘린 영역 덮음 (비율 변화 없음)
+  const wrapEl = canvas.closest(".rv-canvas-wrap");
+  const naturalW = (wrapEl ? wrapEl.clientWidth : 0) || 700;
+  const hasCrop = (rvFixedWidth && rvFixedWidth > 0) || rvCropLeft > 0;
+  canvas.style.width = hasCrop ? naturalW + "px" : "";
+
   renderResultCanvas(canvas, rvState.regions, rvState.materials, regionMatMap, slip, surchargeLoads, piezoLines,
     { viewRegion: rvViewRegion, fixedHeight: rvFixedHeight });
+  updateResizeOverlay();
   updateInfoPanel(result);
+}
+
+function updateResizeOverlay() {
+  const canvas  = $("rv-canvas");
+  const overlay = $("rv-resize-overlay");
+  const shadowL = $("rv-shadow-l");
+  const shadowR = $("rv-shadow-r");
+  if (!canvas || !overlay) return;
+
+  const canvasW = canvas.offsetWidth;
+  const h       = canvas.clientHeight;
+  if (canvasW <= 0 || h <= 0 || !rvState.allResults.length) {
+    overlay.style.display = "none";
+    if (shadowL) shadowL.style.display = "none";
+    if (shadowR) shadowR.style.display = "none";
+    return;
+  }
+
+  const visL = rvCropLeft;
+  const visR = (rvFixedWidth && rvFixedWidth > 0) ? Math.min(rvFixedWidth, canvasW) : canvasW;
+  const visW = Math.max(50, visR - visL);
+
+  // 오버레이: 가시 영역 위에 테두리 표시
+  overlay.style.display = "";
+  overlay.style.left    = visL + "px";
+  overlay.style.top     = "0";
+  overlay.style.width   = visW + "px";
+  overlay.style.height  = h + "px";
+
+  // 왼쪽 그림자
+  if (shadowL) {
+    if (visL > 0) {
+      shadowL.style.display = "";
+      shadowL.style.left    = "0";
+      shadowL.style.width   = visL + "px";
+      shadowL.style.height  = h + "px";
+    } else {
+      shadowL.style.display = "none";
+    }
+  }
+  // 오른쪽 그림자
+  if (shadowR) {
+    if (visR < canvasW) {
+      shadowR.style.display = "";
+      shadowR.style.left    = visR + "px";
+      shadowR.style.width   = (canvasW - visR) + "px";
+      shadowR.style.height  = h + "px";
+    } else {
+      shadowR.style.display = "none";
+    }
+  }
+}
+
+let _rafPending = false;
+function scheduleUpdate() {
+  if (_rafPending) return;
+  _rafPending = true;
+  requestAnimationFrame(async () => {
+    _rafPending = false;
+    if (rvState.allResults.length) await updateCanvas(rvState.selectedIdx);
+  });
+}
+
+function initResizeHandles() {
+  const overlay = $("rv-resize-overlay");
+  if (!overlay) return;
+
+  let dragging     = false;
+  let dragDir      = "";
+  let startX = 0, startY = 0;
+  let startVisW = 0, startH = 0, startCanvasW = 0, startCropLeft = 0;
+
+  overlay.querySelectorAll(".rv-handle").forEach((handle) => {
+    handle.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const canvas = $("rv-canvas");
+      if (!canvas || !rvState.allResults.length) return;
+      dragging     = true;
+      dragDir      = handle.dataset.dir;
+      startX       = e.clientX;
+      startY       = e.clientY;
+      startCanvasW = canvas.offsetWidth;
+      // startVisW = 현재 가시 너비 (오버레이 기준)
+      const visR   = (rvFixedWidth && rvFixedWidth > 0) ? Math.min(rvFixedWidth, startCanvasW) : startCanvasW;
+      startVisW    = visR - rvCropLeft;
+      startH       = canvas.clientHeight;
+      startCropLeft = rvCropLeft;
+    });
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    if (dragDir === "r" || dragDir === "br") {
+      // 오른쪽 경계 = 현재 왼쪽크롭 + 기존가시폭 + dx
+      const newRight = Math.round(rvCropLeft + startVisW + dx);
+      rvFixedWidth   = Math.max(rvCropLeft + 50, Math.min(startCanvasW, newRight));
+      const chk = $("rv-fix-width-enable");
+      const val = $("rv-fix-width-val");
+      if (chk) chk.checked = true;
+      if (val) { val.style.display = ""; val.value = rvFixedWidth - rvCropLeft; }
+    }
+    if (dragDir === "l") {
+      // 왼쪽 핸들 오른쪽으로 드래그 = 왼쪽 크롭 증가
+      const maxL   = (rvFixedWidth && rvFixedWidth > 0 ? rvFixedWidth : startCanvasW) - 50;
+      rvCropLeft   = Math.max(0, Math.min(maxL, Math.round(startCropLeft + dx)));
+    }
+    if (dragDir === "b" || dragDir === "br") {
+      rvFixedHeight = Math.max(50, Math.min(3000, Math.round(startH + dy)));
+      const chk  = $("rv-fix-height-enable");
+      const val  = $("rv-fix-height-val");
+      const hint = $("rv-fix-height-hint");
+      if (chk)  chk.checked = true;
+      if (val)  { val.style.display = ""; val.value = rvFixedHeight; }
+      if (hint) hint.style.display = "";
+    }
+
+    scheduleUpdate();
+  });
+
+  document.addEventListener("mouseup", () => { dragging = false; });
 }
 
 function updateInfoPanel(result) {
@@ -1255,6 +1387,21 @@ async function handleExcelDownload() {
     const CANVAS_W = 900;
     const offCanvas = document.createElement("canvas");
 
+    // 웹 뷰의 크롭 상태를 Excel에 정비율로 반영
+    const webCanvas  = $("rv-canvas");
+    const nativeW    = (webCanvas?.width) || CANVAS_W;
+    const pixelVisL  = rvCropLeft;
+    const pixelVisR  = (rvFixedWidth && rvFixedWidth > 0) ? Math.min(rvFixedWidth, nativeW) : nativeW;
+    const pixelVisW  = Math.max(1, pixelVisR - pixelVisL);
+    const hasCropW   = rvCropLeft > 0 || (rvFixedWidth && rvFixedWidth > 0 && rvFixedWidth < nativeW);
+    // Excel 렌더 크기: 가시 너비가 CANVAS_W가 되도록 정비율 확대
+    const excelScale   = hasCropW ? CANVAS_W / pixelVisW : 1;
+    const excelRenderW = hasCropW ? Math.round(nativeW * excelScale)  : CANVAS_W;
+    const excelCropL   = hasCropW ? Math.round(pixelVisL * excelScale) : 0;
+    const excelFixedH  = (rvFixedHeight && rvFixedHeight > 0)
+      ? Math.round(rvFixedHeight * excelScale)
+      : null;
+
     async function makePng(caseResult) {
       if (!caseResult) return null;
       const rmap           = extractRegionMaterials(rvState.doc, caseResult.analysisName);
@@ -1264,8 +1411,15 @@ async function handleExcelDownload() {
         ? { centerX: caseResult.centerX, centerY: caseResult.centerY, radius: caseResult.radius, fos: caseResult.fos }
         : null;
       renderResultCanvas(offCanvas, rvState.regions, rvState.materials, rmap, slip, surchargeLoads, piezoLines,
-        { forExcel: true, width: CANVAS_W, viewRegion: rvViewRegion, fixedHeight: rvFixedHeight });
-      return offCanvas.toDataURL("image/png");
+        { forExcel: true, width: excelRenderW, viewRegion: rvViewRegion, fixedHeight: excelFixedH });
+      if (!hasCropW) return offCanvas.toDataURL("image/png");
+      // 가시 영역만 크롭하여 CANVAS_W × excelH 크기로 출력
+      const excelH  = offCanvas.height;
+      const outCvs  = document.createElement("canvas");
+      outCvs.width  = CANVAS_W;
+      outCvs.height = excelH;
+      outCvs.getContext("2d").drawImage(offCanvas, excelCropL, 0, CANVAS_W, excelH, 0, 0, CANVAS_W, excelH);
+      return outCvs.toDataURL("image/png");
     }
 
     // 시공시 단계별 PNG 생성
@@ -1487,6 +1641,55 @@ export function initResultViewer() {
       const v = parseInt(fixHeightVal.value, 10);
       rvFixedHeight = (v > 0) ? v : null;
       if (rvState.allResults.length) updateCanvas(rvState.selectedIdx);
+    });
+  }
+
+  const fixWidthChk = $("rv-fix-width-enable");
+  const fixWidthVal = $("rv-fix-width-val");
+
+  if (fixWidthChk) {
+    fixWidthChk.addEventListener("change", () => {
+      const on = fixWidthChk.checked;
+      fixWidthVal.style.display = on ? "" : "none";
+      if (on) {
+        // input 값 = 가시 너비 → rvFixedWidth = 가시너비 + 왼쪽크롭
+        const v = parseInt(fixWidthVal.value, 10);
+        rvFixedWidth = (v > 0) ? v + rvCropLeft : null;
+      } else {
+        rvFixedWidth = null;
+        rvCropLeft   = 0;
+      }
+      if (rvState.allResults.length) updateCanvas(rvState.selectedIdx);
+    });
+  }
+
+  if (fixWidthVal) {
+    const applyWidthVal = () => {
+      const v = parseInt(fixWidthVal.value, 10);
+      // input은 가시 너비, rvFixedWidth = 가시너비 + 왼쪽크롭 (= 오른쪽 경계)
+      rvFixedWidth = (v > 0) ? v + rvCropLeft : null;
+      if (rvState.allResults.length) updateCanvas(rvState.selectedIdx);
+    };
+    fixWidthVal.addEventListener("input",  applyWidthVal);
+    fixWidthVal.addEventListener("change", applyWidthVal);
+  }
+
+  initResizeHandles();
+
+  const copyTableBtn = $("rv-copy-table-btn");
+  if (copyTableBtn) {
+    copyTableBtn.addEventListener("click", () => {
+      const table = $("rv-result-table");
+      if (!table) return;
+      const rows = Array.from(table.querySelectorAll("tr"));
+      const text = rows.map(tr =>
+        Array.from(tr.querySelectorAll("th,td")).map(cell => cell.textContent.trim()).join("\t")
+      ).join("\n");
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = copyTableBtn.textContent;
+        copyTableBtn.textContent = "복사됨!";
+        setTimeout(() => { copyTableBtn.textContent = orig; }, 1500);
+      });
     });
   }
 
