@@ -595,7 +595,7 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
 
   // 파괴원호 + FOS 텍스트
   if (slip && Number.isFinite(slip.centerX)) {
-    drawSlipCircle(ctx, slip, tf, W, H, topPx, regions, toC, isDark);
+    drawSlipCircle(ctx, slip, tf, W, H, topPx, assignedRegions, toC, isDark);
   }
 
   return tf;
