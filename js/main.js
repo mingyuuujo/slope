@@ -2017,6 +2017,51 @@ document.addEventListener("DOMContentLoaded", () => {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   });
+
+  document.getElementById("mat-json-import")?.addEventListener("click", () => {
+    document.getElementById("mat-json-import-file").click();
+  });
+  document.getElementById("mat-json-import-file")?.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        const mats = parsed?.materials;
+        if (!Array.isArray(mats) || !mats.length) {
+          toast("유효한 물성치 JSON이 아닙니다.", false);
+          return;
+        }
+        const tbody = document.getElementById("mat-tbody");
+        tbody.innerHTML = "";
+        mats.forEach((m) => {
+          const tr = createMatRow({
+            id:         m.id   != null ? String(m.id) : "",
+            name:       m.name ?? "",
+            model:      m.model ?? "MohrCoulomb",
+            uw:         m.uw         != null ? String(m.uw)         : "",
+            dw:         m.dw         != null ? String(m.dw)         : "",
+            c:          m.c          != null ? String(m.c)          : "",
+            phi:        m.phi        != null ? String(m.phi)        : "",
+            c_top:      m.c_top      != null ? String(m.c_top)      : "",
+            c_rate:     m.c_rate     != null ? String(m.c_rate)     : "",
+            c_datum:    m.c_datum    != null ? String(m.c_datum)    : "",
+            datum_elev: m.datum_elev != null ? String(m.datum_elev) : "",
+            color:      m.color ?? "",
+          });
+          tbody.appendChild(tr);
+          applyRowEditPolicy(tr);
+        });
+        renumberMatRows();
+        toast(`${mats.length}개 물성치를 가져왔습니다.`);
+      } catch (err) {
+        toast(`JSON 파싱 오류: ${err.message}`, false);
+      }
+      e.target.value = "";   // 동일 파일 재선택 가능하도록 초기화
+    };
+    reader.readAsText(file);
+  });
   document.getElementById("map-scan").addEventListener("click", runScanLayers);
   document.getElementById("map-run").addEventListener("click", runMapping);
   document.getElementById("map-water-add-row").addEventListener("click", () => {
