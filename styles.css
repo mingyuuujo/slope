@@ -433,9 +433,9 @@ main.shell {
 
 .map-workspace {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.35fr);
+  grid-template-columns: minmax(220px, 1fr) minmax(320px, 2fr);
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
   width: 100%;
 }
 
@@ -443,9 +443,32 @@ main.shell {
   margin: 0;
 }
 
+.map-workspace-materials {
+  display: flex;
+  flex-direction: column;
+}
+
+.map-mat-workspace-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 .map-mat-workspace-table {
-  max-height: min(480px, 62vh);
+  flex: 1;
+  max-height: none;
   overflow: auto;
+}
+
+.map-workspace-preview {
+  display: flex;
+  flex-direction: column;
+}
+
+.map-preview-workspace-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .map-preview-workspace-group .map-preview-wrap {
@@ -530,9 +553,11 @@ main.shell {
 
   .map-workspace {
     grid-template-columns: 1fr;
+    align-items: start;
   }
 
   .map-mat-workspace-table {
+    flex: unset;
     max-height: min(320px, 45vh);
   }
 }
