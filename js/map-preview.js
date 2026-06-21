@@ -335,6 +335,22 @@ export function clientToWorldWithView(canvas, clientX, clientY, frame, view) {
 }
 
 /**
+ * DXF 월드 좌표 → 캔버스 CSS 픽셀 좌표 (zoom/pan 적용)
+ */
+export function worldToCanvasWithView(x, y, frame, view) {
+  const { minX, maxY, scale, offsetX, offsetY, w, h } = frame;
+  const z = view?.zoom != null && Number.isFinite(view.zoom) ? Math.max(0.05, view.zoom) : 1;
+  const panX = view?.panX != null && Number.isFinite(view.panX) ? view.panX : 0;
+  const panY = view?.panY != null && Number.isFinite(view.panY) ? view.panY : 0;
+  const px = offsetX + (x - minX) * scale;
+  const py = offsetY + (maxY - y) * scale;
+  return [
+    w / 2 + (px - w / 2) * z + panX,
+    h / 2 + (py - h / 2) * z + panY,
+  ];
+}
+
+/**
  * 휠 확대·축소 (커서 위치 고정)
  */
 export function applyWheelToMapView(view, frame, canvas, clientX, clientY, deltaY) {
@@ -686,6 +702,7 @@ export function drawMapDxfPreviewRegions(
     ctx.fillStyle = hasMid ? "#ffffff" : "rgba(200,204,224,0.85)";
     ctx.fillText(matLabel, px, py + 7);
   }
+  return layout;
 }
 
 function resolveMidRgb(midRaw, templateRgbById) {
