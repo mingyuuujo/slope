@@ -119,15 +119,17 @@
         </p>
         <div class="toolbar map-analysis-toolbar">
           <button type="button" class="btn" id="map-analysis-add">+ 해석 추가</button>
+          <button type="button" class="btn" id="map-analysis-clone">⎘ 해석 복제</button>
         </div>
         <div class="table-wrap map-wrap map-analysis-wrap">
           <table class="data-table" id="map-analysis-table">
             <thead>
               <tr>
-                <th style="width:10%">편집</th>
-                <th style="width:16%">Analysis ID</th>
-                <th style="width:54%">이름 (NAME)</th>
-                <th style="width:12%">삭제</th>
+                <th style="width:8%">편집</th>
+                <th style="width:14%">Analysis ID</th>
+                <th style="width:42%">이름 (NAME)</th>
+                <th style="width:12%">kh</th>
+                <th style="width:10%">삭제</th>
               </tr>
             </thead>
             <tbody id="map-analysis-tbody"></tbody>
@@ -171,12 +173,114 @@
                 <span class="map-canvas-zoom-pct" id="map-canvas-zoom-pct">100%</span>
               </div>
             </div>
+            <div class="map-draw-toolbar" id="map-draw-toolbar">
+              <span class="map-draw-label">그리기 모드</span>
+              <button type="button" class="btn map-draw-btn active" id="map-tool-paint" title="재료 칠하기 (기본 모드)">🖌 재료</button>
+              <button type="button" class="btn map-draw-btn" id="map-tool-pressure" title="상재하중 구간 추가 — 두 점 클릭으로 구간 설정">📐 상재하중</button>
+              <button type="button" class="btn map-draw-btn" id="map-tool-slip" title="슬립 진입/출구 조정 — 핸들 드래그 또는 좌표 직접 입력">← → 슬립 진입/출구</button>
+              <button type="button" class="btn map-draw-btn" id="map-tool-grid" title="격자 탐색 설정 — Grid/Radius 박스를 드래그 또는 좌표 직접 입력">⊞ 격자 탐색</button>
+              <span class="map-draw-sep"></span>
+              <span class="map-draw-label">레이어</span>
+              <button type="button" class="btn map-layer-btn" id="map-layer-materials" data-label="재료 색상" title="재료 색상 숨기기">👁 재료</button>
+              <button type="button" class="btn map-layer-btn" id="map-layer-pressure" data-label="상재하중" title="상재하중 숨기기">👁 하중</button>
+              <button type="button" class="btn map-layer-btn" id="map-layer-slip" data-label="슬립 진입/출구" title="슬립 진입/출구 숨기기">👁 슬립</button>
+              <button type="button" class="btn map-layer-btn" id="map-layer-nodes" data-label="DXF 노드점" title="DXF 노드점 숨기기">👁 노드</button>
+              <button type="button" class="btn map-layer-btn" id="map-layer-grid" data-label="격자 탐색" title="격자 탐색 숨기기">👁 격자</button>
+            </div>
             <div class="map-preview-wrap">
               <div class="map-preview-main">
                 <canvas id="map-dxf-canvas" width="800" height="400" aria-label="DXF Region 미리보기"></canvas>
               </div>
               <aside class="map-dxf-legend" id="map-dxf-legend" aria-label="Material 색상 범례"></aside>
             </div>
+            <!-- 상재하중 입력 패널 -->
+            <div id="map-pressure-input-panel" class="map-pressure-input-panel" style="display:none">
+              <span class="map-pressure-hint" id="map-pressure-hint">캔버스에서 첫 번째 점을 클릭하세요.</span>
+              <button type="button" class="btn btn-primary map-pressure-done-btn" id="map-pressure-done" style="display:none">완료 (kPa 입력)</button>
+              <div class="map-pressure-form" id="map-pressure-form" style="display:none">
+                <label>압력 (kPa):</label>
+                <input type="text" id="map-pressure-kpa" class="map-pressure-kpa-inp" placeholder="예: 186.19" />
+                <button type="button" class="btn btn-primary" id="map-pressure-ok">✓ 추가</button>
+                <button type="button" class="btn" id="map-pressure-cancel">✕ 취소</button>
+              </div>
+            </div>
+            <!-- 슬립 진입/출구 패널 -->
+            <div id="map-slip-panel" class="map-slip-panel" style="display:none">
+              <div class="map-slip-hint">
+                <button type="button" class="btn" id="map-slip-auto" title="DXF 기반으로 자동 재계산">⟳ DXF 자동</button>
+                <span>핸들(●)을 드래그하거나 좌표를 직접 입력하세요</span>
+              </div>
+              <div class="map-slip-pts">
+                <div class="map-slip-pt-row">
+                  <span class="map-slip-pt-label" style="color:#e65100">LL 좌외</span>
+                  X<input type="text" id="map-slip-ll-x" class="map-slip-inp">
+                  Y<input type="text" id="map-slip-ll-y" class="map-slip-inp">
+                </div>
+                <div class="map-slip-pt-row">
+                  <span class="map-slip-pt-label" style="color:#f9a825">LR 좌내</span>
+                  X<input type="text" id="map-slip-lr-x" class="map-slip-inp">
+                  Y<input type="text" id="map-slip-lr-y" class="map-slip-inp">
+                </div>
+                <div class="map-slip-pt-row">
+                  <span class="map-slip-pt-label" style="color:#29b6f6">RL 우내</span>
+                  X<input type="text" id="map-slip-rl-x" class="map-slip-inp">
+                  Y<input type="text" id="map-slip-rl-y" class="map-slip-inp">
+                </div>
+                <div class="map-slip-pt-row">
+                  <span class="map-slip-pt-label" style="color:#1565c0">RR 우외</span>
+                  X<input type="text" id="map-slip-rr-x" class="map-slip-inp">
+                  Y<input type="text" id="map-slip-rr-y" class="map-slip-inp">
+                </div>
+              </div>
+              <div class="map-slip-inc-row">
+                <label>LeftInc</label><input type="text" id="map-slip-linc" class="map-slip-inc-inp" value="20">
+                <label>RightInc</label><input type="text" id="map-slip-rinc" class="map-slip-inc-inp" value="20">
+                <label>RadiusInc</label><input type="text" id="map-slip-radinc" class="map-slip-inc-inp" value="20">
+              </div>
+            </div>
+            <!-- 격자 탐색 패널 -->
+            <div id="map-grid-panel" class="map-grid-panel" style="display:none">
+              <div class="map-grid-hint">
+                <div class="map-grid-draw-row">
+                  <button type="button" class="btn map-grid-draw-btn" id="map-grid-draw-grid"
+                    title="클릭→드래그로 Grid 탐색 영역을 직각 사각형으로 그립니다. 다시 누르면 해제.">◻ Grid 그리기</button>
+                  <button type="button" class="btn map-grid-draw-btn" id="map-grid-draw-radius"
+                    title="클릭→드래그로 Radius 제어 박스를 직각 사각형으로 그립니다. 다시 누르면 해제.">◻ Radius 그리기</button>
+                  <span class="map-grid-draw-hint">또는 핸들(●) 드래그 / 좌표 직접 입력</span>
+                </div>
+                <div class="map-grid-hint-actions">
+                  <button type="button" class="btn" id="map-grid-auto" title="DXF 범위 기준으로 초기화">⟳ DXF 자동</button>
+                  <button type="button" class="btn" id="map-grid-clear" title="격자 탐색 데이터 삭제">✕ 초기화</button>
+                </div>
+              </div>
+              <div class="map-grid-cols">
+                <!-- Grid Search Area -->
+                <div class="map-grid-zone">
+                  <span class="map-grid-zone-title" style="color:#42a5f5">■ Grid 탐색 영역 (원의 중심)</span>
+                  <div class="map-grid-row"><label>UL</label> X<input type="text" id="map-grid-ul-x" class="map-grid-inp"> Y<input type="text" id="map-grid-ul-y" class="map-grid-inp"></div>
+                  <div class="map-grid-row"><label>LL</label> X<input type="text" id="map-grid-ll-x" class="map-grid-inp"> Y<input type="text" id="map-grid-ll-y" class="map-grid-inp"></div>
+                  <div class="map-grid-row"><label>LR</label> X<input type="text" id="map-grid-lr-x" class="map-grid-inp"> Y<input type="text" id="map-grid-lr-y" class="map-grid-inp"></div>
+                  <div class="map-grid-row"><label>UR</label> X<input type="text" id="map-grid-ur-x" class="map-grid-inp"> Y<input type="text" id="map-grid-ur-y" class="map-grid-inp"></div>
+                  <div class="map-grid-inc-row">
+                    <label>NumXInc</label><input type="text" id="map-grid-xinc" class="map-grid-inc-inp" value="10">
+                    <label>NumYInc</label><input type="text" id="map-grid-yinc" class="map-grid-inc-inp" value="10">
+                  </div>
+                </div>
+                <!-- Radius Control Box -->
+                <div class="map-grid-zone">
+                  <span class="map-grid-zone-title" style="color:#66bb6a">■ Radius 제어 박스 (반경 범위)</span>
+                  <div class="map-grid-row"><label>UL</label> X<input type="text" id="map-rad-ul-x" class="map-grid-inp"> Y<input type="text" id="map-rad-ul-y" class="map-grid-inp"></div>
+                  <div class="map-grid-row"><label>LL</label> X<input type="text" id="map-rad-ll-x" class="map-grid-inp"> Y<input type="text" id="map-rad-ll-y" class="map-grid-inp"></div>
+                  <div class="map-grid-row"><label>LR</label> X<input type="text" id="map-rad-lr-x" class="map-grid-inp"> Y<input type="text" id="map-rad-lr-y" class="map-grid-inp"></div>
+                  <div class="map-grid-row"><label>UR</label> X<input type="text" id="map-rad-ur-x" class="map-grid-inp"> Y<input type="text" id="map-rad-ur-y" class="map-grid-inp"></div>
+                  <div class="map-grid-inc-row">
+                    <label>NumInc</label><input type="text" id="map-rad-ninc" class="map-grid-inc-inp" value="20">
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- 상재하중 목록 -->
+            <div id="map-pressure-list" class="map-pressure-list"></div>
           </div>
         </div>
       </div>

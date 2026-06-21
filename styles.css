@@ -550,6 +550,275 @@ main.shell {
 #map-dxf-canvas.map-canvas-paint-mode {
   cursor: crosshair;
 }
+#map-dxf-canvas.map-canvas-pressure-mode {
+  cursor: cell;
+}
+#map-dxf-canvas.map-canvas-slip-mode {
+  cursor: default;
+}
+
+/* ─── 그리기 모드 툴바 ─────────────────────────────────────── */
+.map-draw-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0 3px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  margin-top: 5px;
+}
+.map-draw-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-right: 2px;
+  white-space: nowrap;
+}
+.map-draw-btn {
+  font-size: 11px !important;
+  padding: 3px 9px !important;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+.map-draw-btn.active {
+  background: var(--primary) !important;
+  color: #fff !important;
+  border-color: var(--primary) !important;
+}
+/* 레이어 구분선 */
+.map-draw-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+/* 레이어 토글 버튼 */
+.map-layer-btn {
+  font-size: 11px !important;
+  padding: 3px 8px !important;
+  border-radius: 4px;
+  line-height: 1.4;
+  opacity: 0.9;
+}
+/* 레이어 OFF 상태 */
+.map-layer-btn.map-layer-btn-off {
+  opacity: 0.35;
+  text-decoration: line-through;
+  filter: grayscale(0.8);
+}
+
+/* ─── 상재하중 입력 패널 ────────────────────────────────────── */
+.map-pressure-input-panel {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 12px;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.map-pressure-hint {
+  color: var(--accent);
+  font-size: 12px;
+}
+.map-pressure-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.map-pressure-kpa-inp {
+  width: 90px;
+  font-size: 12px;
+}
+
+/* ─── 상재하중 목록 ──────────────────────────────────────────── */
+.map-pressure-list {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+/* 상재하중 항목 카드 */
+.map-pressure-item {
+  border-radius: 4px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  overflow: hidden;
+}
+/* 헤더 행 (항상 표시) */
+.map-pl-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+}
+.map-pressure-item-no { color: var(--text); font-weight: bold; min-width: 42px; font-size: 12px; }
+.map-pl-summary { flex: 1; color: #aaa; font-size: 11px; }
+.map-pl-expand-btn { font-size: 10px; padding: 1px 6px !important; min-width: 24px; }
+.map-pressure-del-btn { font-size: 11px; padding: 2px 8px !important; }
+/* 완료 버튼 */
+.map-pressure-done-btn { font-size: 11px; padding: 3px 10px !important; margin-left: 6px; }
+/* 상세 패널 (접힘/펼침) */
+.map-pl-detail {
+  border-top: 1px solid var(--border);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--surface, #1a1a1a);
+}
+/* 각 노드 행 */
+.map-pl-node-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.map-pl-node-lbl {
+  font-size: 10px;
+  color: #888;
+  min-width: 26px;
+  font-weight: bold;
+}
+.map-pl-field { display: flex; align-items: center; gap: 2px; }
+.map-pl-field-lbl { font-size: 10px; color: #888; min-width: 14px; text-align: right; }
+.map-pl-coord-inp {
+  width: 80px; font-size: 11px; padding: 1px 4px;
+  background: var(--input-bg, #222); border: 1px solid var(--border);
+  border-radius: 3px; color: var(--text);
+}
+.map-pl-coord-inp:focus { border-color: #5c9cf5; outline: none; }
+
+/* ─── 슬립 진입/출구 패널 ───────────────────────────────────── */
+.map-slip-panel {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-top: 6px;
+}
+.map-slip-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.map-slip-pts {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+.map-slip-pt-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+.map-slip-pt-label {
+  width: 56px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  letter-spacing: -0.2px;
+}
+.map-slip-inp { width: 72px; font-size: 11px; padding: 2px 4px; }
+.map-slip-inc-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.map-slip-inc-row label { color: var(--muted); }
+.map-slip-inc-inp { width: 50px; font-size: 11px; padding: 2px 4px; }
+
+/* ─── 격자 탐색 패널 ─────────────────────────────────────────── */
+.map-grid-panel {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  margin-top: 4px;
+}
+.map-grid-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.map-grid-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 640px) { .map-grid-cols { grid-template-columns: 1fr; } }
+.map-grid-zone { display: flex; flex-direction: column; gap: 3px; }
+.map-grid-zone-title { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.map-grid-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+.map-grid-row label { width: 24px; color: var(--muted); flex-shrink: 0; }
+.map-grid-inp { width: 68px; font-size: 11px; padding: 2px 4px; }
+.map-grid-inc-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.map-grid-inc-row label { color: var(--muted); }
+.map-grid-inc-inp { width: 50px; font-size: 11px; padding: 2px 4px; }
+#map-dxf-canvas.map-canvas-grid-mode { cursor: default; }
+#map-dxf-canvas.map-canvas-grid-draw { cursor: crosshair !important; }
+
+.map-grid-draw-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+  width: 100%;
+}
+.map-grid-draw-btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.map-grid-draw-btn.active {
+  background: var(--accent, #2563eb);
+  color: #fff;
+  border-color: transparent;
+}
+.map-grid-draw-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+.map-grid-hint-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 
 #map-dxf-canvas.map-canvas-drop-hover {
   outline: 2px dashed color-mix(in srgb, var(--accent) 85%, transparent);

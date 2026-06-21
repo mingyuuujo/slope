@@ -21,7 +21,7 @@ import {
   zipToBlob,
   parseDxfText,
 } from "./deps.js";
-import { serializeXmlDocument } from "./xml-utils.js";
+import { serializeXmlDocument, allChildEl, firstChildEl, findFirstTag } from "./xml-utils.js";
 import { listMaterialsFromDocument } from "./template-materials.js";
 import { listAnalysesFromDocument, ensureAnalysisExists } from "./analyses.js";
 import {
@@ -42,12 +42,14 @@ import {
   stepMapViewZoomCenter,
   resetMapPreviewView,
   computeDxfPreviewLayoutFromRegions,
+  clientToWorldWithView,
+  worldToCanvasWithView,
 } from "./map-preview.js";
 
 /** Region 매핑: 해석별 GeoStudio Region ID → Material (여러 Analysis 지원) */
 const mapAnalysesState = {
-  /** @type {{ id: number, title: string, regionMaterials: Record<string, number|null> }[]} */
-  rows: [{ id: 1, title: "Analysis 1", regionMaterials: {} }],
+  /** @type {{ id: number, title: string, regionMaterials: Record<string, number|null>, seismicH: string, pressureLines: Array, slipPts: object|null }[]} */
+  rows: [{ id: 1, title: "Analysis 1", regionMaterials: {}, seismicH: "", pressureLines: [], slipPts: null }],
   activeIndex: 0,
 };
 
@@ -56,8 +58,31 @@ let mapDxfLayersCache = null;
 let mapRegionPreviewCache = null;
 /** Region 미리보기 캔버스 확대/이동 (CSS 픽셀 기준 pan) */
 const mapDxfCanvasView = { zoom: 1, panX: 0, panY: 0 };
+/** DXF 기반 자동 계산 SlipEntryExit (캔버스 오버레이 + runMapping 기본값) */
+let mapSlipAutoComputed = null;
+/** drawMapDxfPreviewRegions 가 마지막으로 반환한 layout 캐시 (setupCanvas 재호출 방지용) */
+let mapLastDrawFrame = null;
+
+/** 캔버스 그리기 모드: "paint" | "pressure" | "slip" */
+let mapCanvasMode = "paint";
+/** 상재하중 그리기 — 현재 선택 중인 노드 목록 (N개까지 누적, 완료 시 pressureLine 생성) */
+let mapPressurePoints = []; // {x, y}[]
+/** 슬립 핸들 드래그 상태 */
+let mapSlipDragHandle = null; // null | { handle:"ll"|"lr"|"rl"|"rr", origX, origY }
+/** 격자 탐색 핸들 드래그 상태 */
+let mapGridDragHandle = null; // null | { zone:"grid"|"radius", corner:"ul"|"ll"|"lr"|"ur" }
+/** 격자 사각형 그리기 모드: 어느 존을 그리는 중인지 */
+let mapGridDrawZone = null; // null | "grid" | "radius"
+/** 사각형 그리기 첫 번째 클릭점 (앵커) */
+let mapGridDrawAnchor = null; // null | {x, y}
+/** 마우스 이동 시 월드 좌표 (그리기 프리뷰용) */
+let mapMouseWorldXY = null;
+/** pressure 모드에서 현재 스냅 대상 DXF 노드 ({x,y} | null) */
+let mapSnapNode = null;
 /** 드래그 이동 직후 재료 클릭 할당 1회 무시 */
 let mapCanvasSuppressNextClick = false;
+/** 레이어 가시성 (UI 표시 여부만 제어, 데이터에 영향 없음) */
+const mapLayerVisible = { materials: true, pressure: true, slip: true, nodes: true, grid: true };
 /** 템플릿 GSZ Material ID → RGB (Color 필드) */
 let mapMaterialRgbById = new Map();
 /** 템플릿 GSZ Material ID → 재료명 */
@@ -573,6 +598,7 @@ function geometryLayersExceptWater() {
 function recomputeRegionPreviewCache() {
   if (!mapDxfLayersCache) {
     mapRegionPreviewCache = null;
+    mapSlipAutoComputed = null;
     return;
   }
   const gl = geometryLayersExceptWater();
@@ -581,7 +607,21 @@ function recomputeRegionPreviewCache() {
     gl,
     () => {},
   );
+  mapSlipAutoComputed = computeSlipEntryExitFromDxf(mapDxfLayersCache, gl);
   mergeRegionKeysIntoAllAnalysisRows();
+}
+
+/** 분석 행의 새 필드 초기화 (seismicH, pressureLines, slipPts, gridData) */
+function initRowExtras(row) {
+  if (!("seismicH" in row)) row.seismicH = "";
+  if (!("pressureLines" in row)) row.pressureLines = [];
+  if (!("slipPts" in row)) row.slipPts = null;
+  if (!("gridData" in row)) row.gridData = null;
+}
+
+/** 현재 활성 분석의 유효 SlipEntryExit 데이터 반환 (사용자 오버라이드 우선) */
+function getEffectiveSlipPts(row) {
+  return row?.slipPts ?? mapSlipAutoComputed;
 }
 
 function mergeRegionKeysIntoAllAnalysisRows() {
@@ -1078,20 +1118,637 @@ function readRegionMidMapFromTable() {
   return m;
 }
 
+// ─── 오버레이 드로잉 헬퍼 ─────────────────────────────────────
+
+/** 상재하중 폴리라인 + 화살표 오버레이 (pl.points: [{x,y},...] 또는 구 형식 {x1,y1,x2,y2}) */
+function drawPressureLineOnCanvas(ctx, wToC, pl, alpha = 1) {
+  // 구 형식 호환
+  const pts = pl.points
+    ? pl.points.map(p => wToC(p.x, p.y))
+    : [wToC(pl.x1, pl.y1), wToC(pl.x2, pl.y2)];
+  if (pts.length < 2) return;
+
+  // 각 세그먼트 길이 계산
+  const segs = [];
+  let totalLen = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const dx = pts[i+1][0] - pts[i][0], dy = pts[i+1][1] - pts[i][1];
+    const l = Math.sqrt(dx*dx + dy*dy);
+    segs.push({ dx, dy, l });
+    totalLen += l;
+  }
+  if (totalLen < 2) return;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  // 폴리라인 선 그리기
+  ctx.strokeStyle = "#ef5350";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.stroke();
+
+  // 분포하중 화살표: 전체 길이 기준으로 균등 배치
+  const arrowLen = Math.min(22, totalLen * 0.12);
+  const nArrows = Math.max(2, Math.floor(totalLen / 28));
+  const arrowHead = 5;
+  ctx.strokeStyle = "#ef5350";
+  ctx.lineWidth = 1.5;
+  for (let a = 0; a <= nArrows; a++) {
+    const dist = (a / nArrows) * totalLen;
+    // 폴리라인 상의 위치 찾기
+    let rem = dist, si = 0;
+    while (si < segs.length - 1 && rem > segs[si].l) { rem -= segs[si].l; si++; }
+    const seg = segs[si];
+    const t = seg.l > 0 ? rem / seg.l : 0;
+    const ax = pts[si][0] + seg.dx * t;
+    const ay = pts[si][1] + seg.dy * t;
+    const nx = -seg.dy / seg.l, ny = seg.dx / seg.l;
+    const bx = ax + ny * arrowLen, by = ay - nx * arrowLen;
+    ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ax, ay); ctx.stroke();
+    const ang = Math.atan2(ay - by, ax - bx);
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ax - arrowHead * Math.cos(ang - 0.4), ay - arrowHead * Math.sin(ang - 0.4));
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ax - arrowHead * Math.cos(ang + 0.4), ay - arrowHead * Math.sin(ang + 0.4));
+    ctx.stroke();
+  }
+
+  // 압력값 라벨 (폴리라인 중앙 세그먼트 중점)
+  const mid = pts[Math.floor(pts.length / 2)];
+  const prev = pts[Math.floor(pts.length / 2) - 1] ?? pts[0];
+  const mx = (prev[0] + mid[0]) / 2, my = (prev[1] + mid[1]) / 2;
+  ctx.fillStyle = "#ef9a9a";
+  ctx.font = "bold 11px system-ui,sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.fillText(`${pl.pressure} kPa`, mx, my - 4);
+  ctx.restore();
+}
+
+/**
+ * X 좌표에서 DXF 리즌 경계의 최대 Y (지형 표면) 반환.
+ * 드래그 중 핸들을 지형선 위로 스냅하는 데 사용.
+ */
+function getTerrainSurfaceY(x) {
+  const regions = mapRegionPreviewCache?.regions;
+  if (!regions?.length) return null;
+  const EPS = 1e-9;
+  let maxY = -Infinity;
+  let found = false;
+  for (const { poly } of regions) {
+    const n = poly.length;
+    for (let i = 0; i < n; i++) {
+      const [ax, ay] = poly[i];
+      const [bx, by] = poly[(i + 1) % n];
+      if (Math.abs(ax - x) < EPS) { if (ay > maxY) { maxY = ay; found = true; } }
+      const minX = Math.min(ax, bx), maxX = Math.max(ax, bx);
+      if (x > minX && x < maxX && Math.abs(bx - ax) > EPS) {
+        const t = (x - ax) / (bx - ax);
+        const y = ay + t * (by - ay);
+        if (y > maxY) { maxY = y; found = true; }
+      }
+    }
+  }
+  return found ? maxY : null;
+}
+
+/**
+ * x1~x2 사이 DXF 리즌 경계의 상단 윤곽(terrain profile)을 반환.
+ * 반환: [{x, y}] (x1→x2 방향으로 정렬). 데이터 없으면 null.
+ */
+function getTerrainProfileBetween(x1, x2) {
+  const regions = mapRegionPreviewCache?.regions;
+  if (!regions?.length) return null;
+  const xMin = Math.min(x1, x2);
+  const xMax = Math.max(x1, x2);
+
+  // 범위 내 모든 꼭짓점 X + 양 끝점
+  const xSet = new Set([x1, x2]);
+  for (const { poly } of regions) {
+    for (const [ax] of poly) {
+      if (ax > xMin && ax < xMax) xSet.add(ax);
+    }
+  }
+
+  // 각 X에서 terrain 최대 Y
+  const pts = [];
+  for (const x of xSet) {
+    const y = getTerrainSurfaceY(x);
+    if (y !== null) pts.push({ x, y });
+  }
+
+  if (pts.length < 2) return null;
+  const dir = x2 >= x1 ? 1 : -1;
+  pts.sort((a, b) => dir * (a.x - b.x));
+  return pts;
+}
+
+/** terrain profile 폴리라인을 캔버스에 그리는 헬퍼 */
+function strokeTerrainProfile(ctx, wToC, profile, fallbackStart, fallbackEnd) {
+  if (profile && profile.length >= 2) {
+    ctx.beginPath();
+    for (let i = 0; i < profile.length; i++) {
+      const [pcx, pcy] = wToC(profile[i].x, profile[i].y);
+      if (i === 0) ctx.moveTo(pcx, pcy); else ctx.lineTo(pcx, pcy);
+    }
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(fallbackStart[0], fallbackStart[1]);
+    ctx.lineTo(fallbackEnd[0], fallbackEnd[1]);
+    ctx.stroke();
+  }
+}
+
+/** 슬립 진입/출구 오버레이 (핸들 + 구간 밴드) */
+function drawSlipOverlayOnCanvas(ctx, wToC, frame, row) {
+  const slip = getEffectiveSlipPts(row);
+  if (!slip) return;
+
+  const ll = { x: parseFloat(slip.leftSideLeftPt?.x  ?? slip.ll?.x ?? 0), y: parseFloat(slip.leftSideLeftPt?.y  ?? slip.ll?.y ?? 0) };
+  const lr = { x: parseFloat(slip.leftSideRightPt?.x ?? slip.lr?.x ?? 0), y: parseFloat(slip.leftSideRightPt?.y ?? slip.lr?.y ?? 0) };
+  const rl = { x: parseFloat(slip.rightSideLeftPt?.x ?? slip.rl?.x ?? 0), y: parseFloat(slip.rightSideLeftPt?.y ?? slip.rl?.y ?? 0) };
+  const rr = { x: parseFloat(slip.rightSideRightPt?.x?? slip.rr?.x ?? 0), y: parseFloat(slip.rightSideRightPt?.y?? slip.rr?.y ?? 0) };
+
+  const [llcx, llcy] = wToC(ll.x, ll.y);
+  const [lrcx, lrcy] = wToC(lr.x, lr.y);
+  const [rlcx, rlcy] = wToC(rl.x, rl.y);
+  const [rrcx, rrcy] = wToC(rr.x, rr.y);
+
+  const dragH = mapSlipDragHandle?.handle;
+  ctx.save();
+
+  // ── 지형 경계를 따르는 선 ────────────────────────
+  ctx.lineWidth = 2;
+  ctx.setLineDash([7, 4]);
+  ctx.globalAlpha = 0.8;
+  // 좌측 구간 LL→LR (주황): terrain profile
+  ctx.strokeStyle = "#f9a825";
+  strokeTerrainProfile(ctx, wToC, getTerrainProfileBetween(ll.x, lr.x), [llcx, llcy], [lrcx, lrcy]);
+  // 우측 구간 RL→RR (하늘): terrain profile
+  ctx.strokeStyle = "#4fc3f7";
+  strokeTerrainProfile(ctx, wToC, getTerrainProfileBetween(rl.x, rr.x), [rlcx, rlcy], [rrcx, rrcy]);
+
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  // ── 핸들 ─────────────────────────────────────────
+  const drawHandle = (cx, cy, color, label, dragging) => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, dragging ? 9 : 7, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 9px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, cx, cy);
+  };
+
+  drawHandle(llcx, llcy, "#e65100", "LL", dragH === "ll");
+  drawHandle(lrcx, lrcy, "#f9a825", "LR", dragH === "lr");
+  drawHandle(rlcx, rlcy, "#29b6f6", "RL", dragH === "rl");
+  drawHandle(rrcx, rrcy, "#1565c0", "RR", dragH === "rr");
+
+  // ── X 좌표 레이블 ─────────────────────────────────
+  ctx.font = "10px system-ui";
+  ctx.textBaseline = "top";
+  ctx.globalAlpha = 0.7;
+  const labels = [
+    [llcx, llcy, "#e65100", ll.x],
+    [lrcx, lrcy, "#f9a825", lr.x],
+    [rlcx, rlcy, "#29b6f6", rl.x],
+    [rrcx, rrcy, "#1565c0", rr.x],
+  ];
+  for (const [cx, cy, color, xv] of labels) {
+    ctx.fillStyle = color;
+    ctx.textAlign = "center";
+    ctx.fillText(`x=${xv.toFixed(1)}`, cx, cy + 11);
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+/** 격자 탐색 사각형(Grid+Radius) 오버레이 */
+/** 앵커(ax,ay)와 현재 커서(cx,cy)에서 축-정렬 직각 사각형 4꼭짓점을 반환 */
+function rectFromAnchorCurrent(ax, ay, cx, cy) {
+  const x0 = Math.min(ax, cx), x1 = Math.max(ax, cx);
+  const y0 = Math.min(ay, cy), y1 = Math.max(ay, cy);
+  return {
+    ul: { x: x0, y: y1 }, ll: { x: x0, y: y0 },
+    lr: { x: x1, y: y0 }, ur: { x: x1, y: y1 },
+  };
+}
+
+function drawGridOverlayOnCanvas(ctx, wToC, row) {
+  const g = row.gridData;
+
+  // corners 배열 [ul, ll, lr, ur] → ul→ur→lr→ll 시계방향으로 사각형 그리기
+  function drawQuad(corners, color, labels, draggingZone, draggingCorner) {
+    // corners 인덱스: 0=ul, 1=ll, 2=lr, 3=ur
+    const cpts = corners.map(c => c ? wToC(c.x, c.y) : null);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 3]);
+    ctx.globalAlpha = 0.75;
+    ctx.beginPath();
+    // ul(0)→ur(3)→lr(2)→ll(1) 순서로 닫힌 사각형
+    const order = [0, 3, 2, 1];
+    let first = true;
+    for (const i of order) {
+      const pt = cpts[i];
+      if (!pt) continue;
+      if (first) { ctx.moveTo(pt[0], pt[1]); first = false; }
+      else ctx.lineTo(pt[0], pt[1]);
+    }
+    if (!first) ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+
+    // 핸들
+    const keys = ["ul", "ll", "lr", "ur"];
+    keys.forEach((key, i) => {
+      const pt = cpts[i];
+      if (!pt) return;
+      const isDragging = (draggingZone === "grid" || draggingZone === "radius") && draggingCorner === key;
+      ctx.beginPath();
+      ctx.arc(pt[0], pt[1], isDragging ? 8 : 6, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 8px system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(labels[i], pt[0], pt[1]);
+    });
+    ctx.restore();
+  }
+
+  if (g) {
+    const dh = mapGridDragHandle;
+    const gridCorners = [g.grid?.ul, g.grid?.ll, g.grid?.lr, g.grid?.ur];
+    drawQuad(gridCorners, "#42a5f5", ["UL","LL","LR","UR"], dh?.zone === "grid" ? "grid" : null, dh?.corner);
+
+    const radCorners = [g.radius?.ul, g.radius?.ll, g.radius?.lr, g.radius?.ur];
+    drawQuad(radCorners, "#66bb6a", ["UL","LL","LR","UR"], dh?.zone === "radius" ? "radius" : null, dh?.corner);
+
+    // 레이블
+    ctx.save();
+    ctx.font = "bold 10px system-ui,sans-serif";
+    ctx.textBaseline = "bottom";
+    if (g.grid?.ul) {
+      const [cx, cy] = wToC(g.grid.ul.x, g.grid.ul.y);
+      ctx.fillStyle = "#42a5f5";
+      ctx.textAlign = "left";
+      ctx.fillText(`Grid (${g.grid.numXInc ?? 10}×${g.grid.numYInc ?? 10})`, cx + 8, cy - 4);
+    }
+    if (g.radius?.ul) {
+      const [cx, cy] = wToC(g.radius.ul.x, g.radius.ul.y);
+      ctx.fillStyle = "#66bb6a";
+      ctx.textAlign = "left";
+      ctx.fillText(`Radius (${g.radius.numInc ?? 20})`, cx + 8, cy - 4);
+    }
+    ctx.restore();
+  }
+
+  // 사각형 그리기 중 라이브 프리뷰 (gridData 여부와 무관하게 항상 체크)
+  if (mapGridDrawZone && mapGridDrawAnchor && mapMouseWorldXY) {
+    const r = rectFromAnchorCurrent(
+      mapGridDrawAnchor.x, mapGridDrawAnchor.y,
+      mapMouseWorldXY[0], mapMouseWorldXY[1]
+    );
+    const color = mapGridDrawZone === "grid" ? "#42a5f5" : "#66bb6a";
+    // ul→ur→lr→ll 순 (시계 방향)
+    const pts = [r.ul, r.ur, r.lr, r.ll].map(c => wToC(c.x, c.y));
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 4]);
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < 4; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+    ctx.stroke();
+    // 앵커 마커
+    const [ancX, ancY] = wToC(mapGridDrawAnchor.x, mapGridDrawAnchor.y);
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.arc(ancX, ancY, 5, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/** mapDxfLayersCache 에서 모든 고유 꼭짓점을 {x,y}[] 로 반환 */
+function getDxfNodePoints() {
+  if (!mapDxfLayersCache) return [];
+  const pts = [];
+  const seen = new Set();
+  for (const polys of Object.values(mapDxfLayersCache)) {
+    for (const poly of polys) {
+      for (const [x, y] of poly) {
+        const k = `${Math.round(x * 1e4) / 1e4},${Math.round(y * 1e4) / 1e4}`;
+        if (!seen.has(k)) { seen.add(k); pts.push({ x, y }); }
+      }
+    }
+  }
+  return pts;
+}
+
+/**
+ * CSS 픽셀 좌표 (cssX, cssY) 에서 가장 가까운 DXF 노드를 반환.
+ * 스냅 반경(12 CSS px) 내에 없으면 null.
+ */
+function snapDxfNode(cssX, cssY) {
+  const frame = mapLastDrawFrame;
+  if (!frame) return null;
+  const nodes = getDxfNodePoints();
+  const SNAP_PX = 12;
+  let best = null, bestD = SNAP_PX;
+  for (const node of nodes) {
+    const [cx, cy] = worldToCanvasWithView(node.x, node.y, frame, mapDxfCanvasView);
+    const d = Math.hypot(cx - cssX, cy - cssY);
+    if (d < bestD) { bestD = d; best = node; }
+  }
+  return best;
+}
+
+/** 캔버스 오버레이 전체 (상재하중 + 슬립 + 그리기 중 프리뷰) */
+function drawMapOverlayOnCanvas() {
+  const canvas = document.getElementById("map-dxf-canvas");
+  if (!canvas) return;
+  // mapLastDrawFrame: drawMapDxfPreviewRegions 반환값 — 여기서 다시 setupCanvas를 호출하면 캔버스가 지워짐
+  const frame = mapLastDrawFrame;
+  if (!frame) return;
+
+  const ctx = canvas.getContext("2d");
+  // transform은 drawMapDxfPreviewRegions → setupCanvas 에서 이미 설정됨, 재설정 불필요
+  const wToC = (x, y) => worldToCanvasWithView(x, y, frame, mapDxfCanvasView);
+  const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+  if (!row) return;
+  initRowExtras(row);
+
+  // 상재하중 선분 그리기
+  if (mapLayerVisible.pressure) {
+    for (const pl of row.pressureLines) {
+      drawPressureLineOnCanvas(ctx, wToC, pl);
+    }
+  }
+
+  // pressure 모드 — 누적 노드 프리뷰 (레이어 off여도 현재 그리는 중이면 표시)
+  if (mapCanvasMode === "pressure" && mapPressurePoints.length > 0) {
+    // 이미 확정된 세그먼트들
+    for (let i = 0; i < mapPressurePoints.length - 1; i++) {
+      drawPressureLineOnCanvas(ctx, wToC, {
+        points: [mapPressurePoints[i], mapPressurePoints[i + 1]], pressure: "…",
+      }, 0.5);
+    }
+    // 마지막 노드 → 현재 마우스 미리보기
+    if (mapMouseWorldXY) {
+      const last = mapPressurePoints[mapPressurePoints.length - 1];
+      drawPressureLineOnCanvas(ctx, wToC, {
+        points: [last, { x: mapMouseWorldXY[0], y: mapMouseWorldXY[1] }], pressure: "…",
+      }, 0.3);
+    }
+    // 확정 노드 마커 (빨간 점)
+    ctx.save();
+    ctx.fillStyle = "#ef5350";
+    for (const pt of mapPressurePoints) {
+      const [cx, cy] = wToC(pt.x, pt.y);
+      ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 슬립 오버레이 (슬립 모드이거나 슬립 데이터 있을 때, 레이어 off면 숨김)
+  const hasSlip = row.slipPts != null || mapSlipAutoComputed != null;
+  if (mapLayerVisible.slip && (mapCanvasMode === "slip" || hasSlip) && (mapRegionPreviewCache?.regions?.length)) {
+    drawSlipOverlayOnCanvas(ctx, wToC, frame, row);
+  }
+
+  // 격자 탐색 오버레이 (grid 모드이거나 gridData 있을 때)
+  const hasGrid = row.gridData != null;
+  if (mapLayerVisible.grid && (mapCanvasMode === "grid" || hasGrid)) {
+    drawGridOverlayOnCanvas(ctx, wToC, row);
+  }
+
+  // DXF 노드 점 (레이어 on일 때만) + pressure 모드 스냅 하이라이트
+  if (mapLayerVisible.nodes && mapDxfLayersCache) {
+    const nodes = getDxfNodePoints();
+    if (nodes.length) {
+      ctx.save();
+      ctx.fillStyle = "rgba(80, 160, 255, 0.75)";
+      for (const { x, y } of nodes) {
+        const [cx, cy] = wToC(x, y);
+        ctx.beginPath();
+        ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (mapCanvasMode === "pressure" && mapSnapNode) {
+        const [scx, scy] = wToC(mapSnapNode.x, mapSnapNode.y);
+        ctx.strokeStyle = "#ffd600";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(scx, scy, 9, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+}
+
+// ─── 상재하중 목록 패널 ─────────────────────────────────────────
+function renderPressureListPanel() {
+  const el = document.getElementById("map-pressure-list");
+  if (!el) return;
+  el.innerHTML = "";
+  const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+  if (!row) return;
+  initRowExtras(row);
+  if (!row.pressureLines.length) return;
+
+  row.pressureLines.forEach((pl, i) => {
+    // 구 형식(x1,y1,x2,y2) → 신 형식(points) 호환 변환
+    if (!pl.points && pl.x1 !== undefined) {
+      pl.points = [{ x: pl.x1, y: pl.y1 }, { x: pl.x2, y: pl.y2 }];
+    }
+
+    const item = document.createElement("div");
+    item.className = "map-pressure-item";
+
+    // ── 헤더 행 (항상 표시) ──
+    const header = document.createElement("div");
+    header.className = "map-pl-header";
+
+    const no = document.createElement("span");
+    no.className = "map-pressure-item-no";
+    no.textContent = `PL-${i + 1}`;
+
+    const summary = document.createElement("span");
+    summary.className = "map-pl-summary";
+    summary.textContent = `${pl.points.length}pts · ${pl.pressure} kPa`;
+
+    const expandBtn = document.createElement("button");
+    expandBtn.type = "button";
+    expandBtn.className = "btn map-pl-expand-btn";
+    expandBtn.textContent = "▶";
+    expandBtn.title = "펼치기 / 접기";
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "btn map-pressure-del-btn";
+    delBtn.textContent = "삭제";
+    delBtn.addEventListener("click", () => {
+      row.pressureLines.splice(i, 1);
+      renderPressureListPanel();
+      redrawMapDxfPreview();
+    });
+
+    header.appendChild(no);
+    header.appendChild(summary);
+    header.appendChild(expandBtn);
+    header.appendChild(delBtn);
+
+    // ── 상세 패널 (접힘 기본값) ──
+    const detail = document.createElement("div");
+    detail.className = "map-pl-detail";
+    detail.style.display = "none";
+
+    const makeField = (label, rawVal, onChange) => {
+      const wrap = document.createElement("span");
+      wrap.className = "map-pl-field";
+      if (label) {
+        const lsp = document.createElement("span");
+        lsp.className = "map-pl-field-lbl";
+        lsp.textContent = label;
+        wrap.appendChild(lsp);
+      }
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.className = "map-pl-coord-inp";
+      inp.value = typeof rawVal === "string" ? rawVal : Number(rawVal).toFixed(3);
+      inp.addEventListener("change", () => {
+        const v = parseFloat(inp.value);
+        if (Number.isFinite(v)) { onChange(v); redrawMapDxfPreview(); }
+        else inp.value = typeof rawVal === "string" ? rawVal : Number(rawVal).toFixed(3);
+      });
+      wrap.appendChild(inp);
+      return wrap;
+    };
+
+    // 각 노드 행
+    pl.points.forEach((pt, j) => {
+      const nodeRow = document.createElement("div");
+      nodeRow.className = "map-pl-node-row";
+      const lbl = document.createElement("span");
+      lbl.className = "map-pl-node-lbl";
+      lbl.textContent = `P${j + 1}`;
+      nodeRow.appendChild(lbl);
+      nodeRow.appendChild(makeField("X", pt.x, v => { pt.x = v; }));
+      nodeRow.appendChild(makeField("Y", pt.y, v => { pt.y = v; }));
+      detail.appendChild(nodeRow);
+    });
+
+    // kPa 행
+    const kpaRow = document.createElement("div");
+    kpaRow.className = "map-pl-node-row";
+    const kpaLbl = document.createElement("span");
+    kpaLbl.className = "map-pl-node-lbl";
+    kpaLbl.textContent = "kPa";
+    kpaRow.appendChild(kpaLbl);
+    kpaRow.appendChild(makeField("", pl.pressure, v => {
+      pl.pressure = String(v);
+      summary.textContent = `${pl.points.length}pts · ${pl.pressure} kPa`;
+    }));
+    detail.appendChild(kpaRow);
+
+    // 펼치기/접기 토글
+    expandBtn.addEventListener("click", () => {
+      const open = detail.style.display !== "none";
+      detail.style.display = open ? "none" : "";
+      expandBtn.textContent = open ? "▶" : "▼";
+    });
+
+    item.appendChild(header);
+    item.appendChild(detail);
+    el.appendChild(item);
+  });
+}
+
+// ─── 슬립 패널 동기화 ────────────────────────────────────────────
+function syncSlipPanelFromRow() {
+  const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+  if (!row) return;
+  initRowExtras(row);
+  const slip = getEffectiveSlipPts(row);
+  const fmt = (v) => (v != null && Number.isFinite(Number(v)) ? String(v) : "");
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = fmt(val); };
+  if (slip) {
+    set("map-slip-ll-x",  slip.leftSideLeftPt?.x   ?? slip.ll?.x ?? "");
+    set("map-slip-ll-y",  slip.leftSideLeftPt?.y   ?? slip.ll?.y ?? "");
+    set("map-slip-lr-x",  slip.leftSideRightPt?.x  ?? slip.lr?.x ?? "");
+    set("map-slip-lr-y",  slip.leftSideRightPt?.y  ?? slip.lr?.y ?? "");
+    set("map-slip-rl-x",  slip.rightSideLeftPt?.x  ?? slip.rl?.x ?? "");
+    set("map-slip-rl-y",  slip.rightSideLeftPt?.y  ?? slip.rl?.y ?? "");
+    set("map-slip-rr-x",  slip.rightSideRightPt?.x ?? slip.rr?.x ?? "");
+    set("map-slip-rr-y",  slip.rightSideRightPt?.y ?? slip.rr?.y ?? "");
+    set("map-slip-linc",   slip.leftInc   ?? 20);
+    set("map-slip-rinc",   slip.rightInc  ?? 20);
+    set("map-slip-radinc", slip.radiusInc ?? 20);
+  }
+}
+
+function flushSlipPanelToRow() {
+  const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+  if (!row) return;
+  initRowExtras(row);
+  const g = (id) => document.getElementById(id)?.value.trim() ?? "";
+  const pf = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+  const llX = pf(g("map-slip-ll-x")), llY = pf(g("map-slip-ll-y"));
+  const lrX = pf(g("map-slip-lr-x")), lrY = pf(g("map-slip-lr-y"));
+  const rlX = pf(g("map-slip-rl-x")), rlY = pf(g("map-slip-rl-y"));
+  const rrX = pf(g("map-slip-rr-x")), rrY = pf(g("map-slip-rr-y"));
+  if ([llX, llY, lrX, lrY, rlX, rlY, rrX, rrY].some(v => v === null)) return;
+  row.slipPts = {
+    leftSideLeftPt:   { x: llX, y: llY },
+    leftSideRightPt:  { x: lrX, y: lrY },
+    rightSideLeftPt:  { x: rlX, y: rlY },
+    rightSideRightPt: { x: rrX, y: rrY },
+    leftInc:   pf(g("map-slip-linc"))   ?? 20,
+    rightInc:  pf(g("map-slip-rinc"))   ?? 20,
+    radiusInc: pf(g("map-slip-radinc")) ?? 20,
+  };
+}
+
 function redrawMapDxfPreview() {
   const canvas = document.getElementById("map-dxf-canvas");
   const legend = document.getElementById("map-dxf-legend");
   if (!canvas) return;
   const regions = mapRegionPreviewCache?.regions || [];
-  const midMap = readRegionMidMapFromTable();
-  drawMapDxfPreviewRegions(
+  const midMap = mapLayerVisible.materials ? readRegionMidMapFromTable() : {};
+  mapLastDrawFrame = drawMapDxfPreviewRegions(
     canvas,
     regions,
     midMap,
-    mapMaterialRgbById,
+    mapLayerVisible.materials ? mapMaterialRgbById : new Map(),
     mapWaterPoints,
     mapDxfCanvasView,
-  );
+  ) ?? null;
   renderMapDxfLegendRegions(
     legend,
     regions,
@@ -1100,6 +1757,7 @@ function redrawMapDxfPreview() {
     mapMaterialNameById,
   );
   updateMapCanvasZoomPct();
+  drawMapOverlayOnCanvas();
 }
 
 function updateMapCanvasZoomPct() {
@@ -1228,20 +1886,28 @@ function refillMapRegionTbodyFromCache() {
 function initAnalysesFromTemplateDoc(doc) {
   const list = listAnalysesFromDocument(doc);
   if (!list.length) {
-    mapAnalysesState.rows = [{ id: 1, title: "Analysis 1", regionMaterials: {} }];
+    const row = { id: 1, title: "Analysis 1", regionMaterials: {} };
+    initRowExtras(row);
+    mapAnalysesState.rows = [row];
   } else {
-    mapAnalysesState.rows = list.map((a) => ({
-      id: parseInt(String(a.id), 10) || 1,
-      title: (a.name && String(a.name).trim()) || `해석 ${a.id}`,
-      regionMaterials: {},
-    }));
+    mapAnalysesState.rows = list.map((a) => {
+      const row = {
+        id: parseInt(String(a.id), 10) || 1,
+        title: (a.name && String(a.name).trim()) || `해석 ${a.id}`,
+        regionMaterials: {},
+      };
+      initRowExtras(row);
+      return row;
+    });
   }
   mapAnalysesState.activeIndex = 0;
   mergeRegionKeysIntoAllAnalysisRows();
 }
 
 function resetMapAnalysesToDefault() {
-  mapAnalysesState.rows = [{ id: 1, title: "Analysis 1", regionMaterials: {} }];
+  const row = { id: 1, title: "Analysis 1", regionMaterials: {} };
+  initRowExtras(row);
+  mapAnalysesState.rows = [row];
   mapAnalysesState.activeIndex = 0;
   mergeRegionKeysIntoAllAnalysisRows();
 }
@@ -1252,6 +1918,8 @@ function setActiveAnalysisIndex(idx) {
   mapAnalysesState.activeIndex = idx;
   renderMapAnalysisRows();
   refillMapRegionTbodyFromCache();
+  renderPressureListPanel();
+  if (mapCanvasMode === "slip") syncSlipPanelFromRow();
   redrawMapDxfPreview();
 }
 
@@ -1303,6 +1971,16 @@ function renderMapAnalysisRows() {
     titleInp.value = row.title;
     tdTitle.appendChild(titleInp);
 
+    const tdKh = document.createElement("td");
+    const khInp = document.createElement("input");
+    khInp.type = "text";
+    khInp.className = "map-analysis-kh-inp";
+    khInp.placeholder = "0.066";
+    khInp.title = "수평지진계수 kh (없으면 빈칸)";
+    initRowExtras(row);
+    khInp.value = row.seismicH ?? "";
+    tdKh.appendChild(khInp);
+
     const tdDel = document.createElement("td");
     tdDel.style.textAlign = "center";
     const delBtn = document.createElement("button");
@@ -1315,6 +1993,7 @@ function renderMapAnalysisRows() {
     tr.appendChild(tdR);
     tr.appendChild(tdId);
     tr.appendChild(tdTitle);
+    tr.appendChild(tdKh);
     tr.appendChild(tdDel);
     tbody.appendChild(tr);
   });
@@ -1357,6 +2036,10 @@ function bindMapAnalysisTable() {
     if (t.classList.contains("map-analysis-title-inp")) {
       mapAnalysesState.rows[idx].title = t.value;
     }
+    if (t.classList.contains("map-analysis-kh-inp")) {
+      initRowExtras(mapAnalysesState.rows[idx]);
+      mapAnalysesState.rows[idx].seismicH = t.value;
+    }
   });
   tbody.addEventListener("click", (e) => {
     const btn = e.target.closest(".map-analysis-del-btn");
@@ -1376,6 +2059,202 @@ function ensureMapTbodyPreviewBound() {
   }
 }
 
+// ─── 캔버스 그리기 모드 ──────────────────────────────────────────
+
+function switchMapCanvasMode(mode) {
+  mapCanvasMode = mode;
+  mapPressurePoints = [];
+  mapSlipDragHandle = null;
+  mapGridDragHandle = null;
+  mapGridDrawZone = null;
+  mapGridDrawAnchor = null;
+  mapMouseWorldXY = null;
+  mapSnapNode = null;
+
+  ["map-tool-paint", "map-tool-pressure", "map-tool-slip", "map-tool-grid"].forEach((id) => {
+    document.getElementById(id)?.classList.remove("active");
+  });
+  const modeBtn = { paint: "map-tool-paint", pressure: "map-tool-pressure", slip: "map-tool-slip", grid: "map-tool-grid" };
+  document.getElementById(modeBtn[mode])?.classList.add("active");
+
+  const canvas = document.getElementById("map-dxf-canvas");
+  if (canvas) {
+    canvas.classList.toggle("map-canvas-paint-mode",    mode === "paint");
+    canvas.classList.toggle("map-canvas-pressure-mode", mode === "pressure");
+    canvas.classList.toggle("map-canvas-slip-mode",     mode === "slip");
+    canvas.classList.toggle("map-canvas-grid-mode",     mode === "grid");
+  }
+
+  // 패널 표시/숨김
+  const pressurePanel = document.getElementById("map-pressure-input-panel");
+  const slipPanel     = document.getElementById("map-slip-panel");
+  const gridPanel     = document.getElementById("map-grid-panel");
+  if (pressurePanel) pressurePanel.style.display = mode === "pressure" ? "" : "none";
+  if (slipPanel)     slipPanel.style.display     = mode === "slip"     ? "" : "none";
+  if (gridPanel)     gridPanel.style.display     = mode === "grid"     ? "" : "none";
+
+  if (mode === "pressure") {
+    const hint = document.getElementById("map-pressure-hint");
+    const form = document.getElementById("map-pressure-form");
+    if (hint) hint.style.display = "";
+    if (form) form.style.display = "none";
+  }
+  if (mode !== "paint") setMapPaintMaterialId(null);
+
+  if (mode === "slip") syncSlipPanelFromRow();
+  if (mode === "grid") syncGridPanelFromRow();
+
+  redrawMapDxfPreview();
+}
+
+/** 슬립 핸들 히트 테스트 (canvas client 좌표, 반환: null | "ll"|"lr"|"rl"|"rr") */
+function hitTestSlipHandle(canvas, clientX, clientY) {
+  const frame = mapLastDrawFrame;
+  if (!frame) return null;
+  const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+  if (!row) return null;
+  const slip = getEffectiveSlipPts(row);
+  if (!slip) return null;
+
+  const pts = {
+    ll: slip.leftSideLeftPt   ?? slip.ll,
+    lr: slip.leftSideRightPt  ?? slip.lr,
+    rl: slip.rightSideLeftPt  ?? slip.rl,
+    rr: slip.rightSideRightPt ?? slip.rr,
+  };
+  const rect = canvas.getBoundingClientRect();
+  const cx = clientX - rect.left;
+  const cy = clientY - rect.top;
+  const HIT_R = 14;
+  for (const [key, pt] of Object.entries(pts)) {
+    if (!pt) continue;
+    const [pcx, pcy] = worldToCanvasWithView(Number(pt.x), Number(pt.y), frame, mapDxfCanvasView);
+    if (Math.hypot(cx - pcx, cy - pcy) <= HIT_R) return key;
+  }
+  return null;
+}
+
+/** 격자 탐색 핸들 히트 테스트. 반환: null | { zone:"grid"|"radius", corner:"ul"|"ll"|"lr"|"ur" } */
+function hitTestGridHandle(canvas, clientX, clientY) {
+  const frame = mapLastDrawFrame;
+  if (!frame) return null;
+  const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+  if (!row) return null;
+  initRowExtras(row);
+  if (!row.gridData) return null;
+
+  const rect = canvas.getBoundingClientRect();
+  const cx = clientX - rect.left;
+  const cy = clientY - rect.top;
+  const HIT_R = 14;
+  const corners = ["ul", "ll", "lr", "ur"];
+  for (const zone of ["grid", "radius"]) {
+    const box = row.gridData[zone];
+    if (!box) continue;
+    for (const corner of corners) {
+      const pt = box[corner];
+      if (!pt) continue;
+      const [pcx, pcy] = worldToCanvasWithView(Number(pt.x), Number(pt.y), frame, mapDxfCanvasView);
+      if (Math.hypot(cx - pcx, cy - pcy) <= HIT_R) return { zone, corner };
+    }
+  }
+  return null;
+}
+
+/** 격자 패널을 현재 행 데이터로 채우기 */
+function syncGridPanelFromRow() {
+  const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+  if (!row) return;
+  initRowExtras(row);
+  const g = row.gridData;
+  const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  if (!g) return;
+  const { grid, radius } = g;
+  if (grid) {
+    set("map-grid-ul-x", grid.ul?.x ?? ""); set("map-grid-ul-y", grid.ul?.y ?? "");
+    set("map-grid-ll-x", grid.ll?.x ?? ""); set("map-grid-ll-y", grid.ll?.y ?? "");
+    set("map-grid-lr-x", grid.lr?.x ?? ""); set("map-grid-lr-y", grid.lr?.y ?? "");
+    set("map-grid-ur-x", grid.ur?.x ?? ""); set("map-grid-ur-y", grid.ur?.y ?? "");
+    set("map-grid-xinc", grid.numXInc ?? 10);
+    set("map-grid-yinc", grid.numYInc ?? 10);
+  }
+  if (radius) {
+    set("map-rad-ul-x", radius.ul?.x ?? ""); set("map-rad-ul-y", radius.ul?.y ?? "");
+    set("map-rad-ll-x", radius.ll?.x ?? ""); set("map-rad-ll-y", radius.ll?.y ?? "");
+    set("map-rad-lr-x", radius.lr?.x ?? ""); set("map-rad-lr-y", radius.lr?.y ?? "");
+    set("map-rad-ur-x", radius.ur?.x ?? ""); set("map-rad-ur-y", radius.ur?.y ?? "");
+    set("map-rad-ninc", radius.numInc ?? 20);
+  }
+}
+
+/** 격자 패널 입력값을 현재 행에 flush */
+function flushGridPanelToRow() {
+  const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+  if (!row) return;
+  initRowExtras(row);
+  const g = (id) => document.getElementById(id)?.value.trim() ?? "";
+  const pf = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+  const pt = (xi, yi) => {
+    const x = pf(g(xi)), y = pf(g(yi));
+    return (x !== null && y !== null) ? { x, y } : null;
+  };
+  const ul = pt("map-grid-ul-x","map-grid-ul-y");
+  const ll = pt("map-grid-ll-x","map-grid-ll-y");
+  const lr = pt("map-grid-lr-x","map-grid-lr-y");
+  const ur = pt("map-grid-ur-x","map-grid-ur-y");
+  const rul = pt("map-rad-ul-x","map-rad-ul-y");
+  const rll = pt("map-rad-ll-x","map-rad-ll-y");
+  const rlr = pt("map-rad-lr-x","map-rad-lr-y");
+  const rur = pt("map-rad-ur-x","map-rad-ur-y");
+  if (!row.gridData) row.gridData = {
+    grid:   { ul: null, ll: null, lr: null, ur: null, numXInc: 10, numYInc: 10 },
+    radius: { ul: null, ll: null, lr: null, ur: null, numInc: 20 },
+  };
+  if (ul || ll || lr || ur) {
+    row.gridData.grid.ul = ul; row.gridData.grid.ll = ll;
+    row.gridData.grid.lr = lr; row.gridData.grid.ur = ur;
+    row.gridData.grid.numXInc = pf(g("map-grid-xinc")) ?? 10;
+    row.gridData.grid.numYInc = pf(g("map-grid-yinc")) ?? 10;
+  }
+  if (rul || rll || rlr || rur) {
+    row.gridData.radius.ul = rul; row.gridData.radius.ll = rll;
+    row.gridData.radius.lr = rlr; row.gridData.radius.ur = rur;
+    row.gridData.radius.numInc = pf(g("map-rad-ninc")) ?? 20;
+  }
+}
+
+/** DXF 범위로 Grid/Radius 초기값 자동 설정 */
+function autoInitGridDataFromDxf(row) {
+  initRowExtras(row);
+  const nodes = getDxfNodePoints();
+  if (!nodes.length) { toast("DXF 데이터가 없습니다.", false); return; }
+  let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+  for (const { x, y } of nodes) {
+    xmin = Math.min(xmin, x); xmax = Math.max(xmax, x);
+    ymin = Math.min(ymin, y); ymax = Math.max(ymax, y);
+  }
+  const W = xmax - xmin, H = ymax - ymin;
+  // Grid: 상단 2/3 영역 (원의 중심이 비탈 위에 있음)
+  const gxpad = W * 0.1, gypad = H * 0.1;
+  const gUL = { x: xmin + gxpad, y: ymax - gypad };
+  const gLL = { x: xmin + gxpad, y: ymin + H * 0.3 };
+  const gLR = { x: xmax - gxpad, y: ymin + H * 0.3 };
+  const gUR = { x: xmax - gxpad, y: ymax - gypad };
+  // Radius: 하단 중간 영역 (반경 접선 제어)
+  const rxpad = W * 0.2, rypad = H * 0.15;
+  const rUL = { x: xmin + rxpad, y: ymin + H * 0.45 };
+  const rLL = { x: xmin + rxpad, y: ymin + rypad };
+  const rLR = { x: xmax - rxpad, y: ymin + rypad };
+  const rUR = { x: xmax - rxpad, y: ymin + H * 0.45 };
+  row.gridData = {
+    grid:   { ul: gUL, ll: gLL, lr: gLR, ur: gUR, numXInc: 10, numYInc: 10 },
+    radius: { ul: rUL, ll: rLL, lr: rLR, ur: rUR, numInc: 20 },
+  };
+  syncGridPanelFromRow();
+  redrawMapDxfPreview();
+  toast("Grid/Radius가 DXF 범위 기준으로 초기화되었습니다.");
+}
+
 function bindMapCanvasZoomPan() {
   const canvas = document.getElementById("map-dxf-canvas");
   if (!canvas || canvas.dataset.zoomPanBound === "1") return;
@@ -1384,14 +2263,8 @@ function bindMapCanvasZoomPan() {
   canvas.addEventListener(
     "wheel",
     (e) => {
-      const regions = mapRegionPreviewCache?.regions || [];
-      if (!regions.length) return;
       e.preventDefault();
-      const frame = computeDxfPreviewLayoutFromRegions(
-        canvas,
-        regions,
-        mapWaterPoints,
-      );
+      const frame = mapLastDrawFrame;
       if (!frame) return;
       applyWheelToMapView(
         mapDxfCanvasView,
@@ -1428,12 +2301,7 @@ function bindMapCanvasZoomPan() {
 
   canvas.addEventListener("pointermove", (e) => {
     if (!drag) return;
-    const regions = mapRegionPreviewCache?.regions || [];
-    const frame = computeDxfPreviewLayoutFromRegions(
-      canvas,
-      regions,
-      mapWaterPoints,
-    );
+    const frame = mapLastDrawFrame;
     if (!frame) return;
     const rect = canvas.getBoundingClientRect();
     const dx =
@@ -1467,11 +2335,7 @@ function bindMapCanvasZoomPan() {
 
 function wireMapCanvasZoomButtons() {
   const canvas = document.getElementById("map-dxf-canvas");
-  const getFrame = () => {
-    const regions = mapRegionPreviewCache?.regions || [];
-    if (!canvas || !regions.length) return null;
-    return computeDxfPreviewLayoutFromRegions(canvas, regions, mapWaterPoints);
-  };
+  const getFrame = () => mapLastDrawFrame;
   document
     .getElementById("map-canvas-zoom-in")
     ?.addEventListener("click", () => {
@@ -1494,6 +2358,230 @@ function wireMapCanvasZoomButtons() {
       resetMapPreviewView(mapDxfCanvasView);
       redrawMapDxfPreview();
     });
+}
+
+function bindMapDrawModeCanvas() {
+  const canvas = document.getElementById("map-dxf-canvas");
+  if (!canvas || canvas.dataset.drawModeBound === "1") return;
+  canvas.dataset.drawModeBound = "1";
+
+  // 마우스 이동 → 프리뷰 업데이트 (상재하중 모드) + 슬립 커서
+  canvas.addEventListener("mousemove", (e) => {
+    if (mapCanvasMode === "pressure") {
+      const frame = mapLastDrawFrame;
+      if (!frame) return;
+      const rect = canvas.getBoundingClientRect();
+      const snapped = snapDxfNode(e.clientX - rect.left, e.clientY - rect.top);
+      mapSnapNode = snapped;
+      mapMouseWorldXY = snapped
+        ? [snapped.x, snapped.y]
+        : clientToWorldWithView(canvas, e.clientX, e.clientY, frame, mapDxfCanvasView);
+      redrawMapDxfPreview(); // 스냅 하이라이트 + 선분 프리뷰 갱신
+    } else if (mapCanvasMode === "slip") {
+      const h = hitTestSlipHandle(canvas, e.clientX, e.clientY);
+      canvas.style.cursor = h ? "grab" : "default";
+    } else if (mapCanvasMode === "grid") {
+      if (mapGridDrawZone) {
+        // 그리기 모드 (앵커 설정 전/후 모두) — 마우스 위치 항상 갱신
+        const frame = mapLastDrawFrame;
+        if (frame) mapMouseWorldXY = clientToWorldWithView(canvas, e.clientX, e.clientY, frame, mapDxfCanvasView);
+        canvas.style.cursor = "crosshair";
+        redrawMapDxfPreview();
+      } else if (!mapGridDragHandle) {
+        const h = hitTestGridHandle(canvas, e.clientX, e.clientY);
+        canvas.style.cursor = h ? "grab" : "default";
+      }
+    } else {
+      mapMouseWorldXY = null;
+      mapSnapNode = null;
+    }
+  });
+
+  // pointerdown → 상재하중 첫/두 번째 클릭 OR 슬립 드래그 시작
+  canvas.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    if (e.altKey) return; // alt+drag는 pan에서 처리
+
+    if (mapCanvasMode === "pressure") {
+      e.preventDefault();
+      const frame = mapLastDrawFrame;
+      if (!frame) return;
+      const rect = canvas.getBoundingClientRect();
+      const snapped = snapDxfNode(e.clientX - rect.left, e.clientY - rect.top);
+      const [wx, wy] = snapped
+        ? [snapped.x, snapped.y]
+        : clientToWorldWithView(canvas, e.clientX, e.clientY, frame, mapDxfCanvasView);
+
+      mapPressurePoints.push({ x: wx, y: wy });
+      const cnt = mapPressurePoints.length;
+      const hint = document.getElementById("map-pressure-hint");
+      const doneBtn = document.getElementById("map-pressure-done");
+      if (hint) hint.textContent = `${cnt}번째 노드 추가됨 (${wx.toFixed(2)}, ${wy.toFixed(2)}) — 계속 클릭하거나 완료를 누르세요.`;
+      if (doneBtn) doneBtn.style.display = cnt >= 2 ? "" : "none";
+      redrawMapDxfPreview();
+      return;
+    }
+
+    if (mapCanvasMode === "slip") {
+      const h = hitTestSlipHandle(canvas, e.clientX, e.clientY);
+      if (h) {
+        e.preventDefault();
+        const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+        if (!row) return;
+        const slip = getEffectiveSlipPts(row);
+        if (!slip) return;
+        const ptMap = {
+          ll: slip.leftSideLeftPt   ?? slip.ll,
+          lr: slip.leftSideRightPt  ?? slip.lr,
+          rl: slip.rightSideLeftPt  ?? slip.rl,
+          rr: slip.rightSideRightPt ?? slip.rr,
+        };
+        const orig = ptMap[h];
+        mapSlipDragHandle = { handle: h, origX: Number(orig?.x ?? 0), origY: Number(orig?.y ?? 0) };
+        try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+        canvas.style.cursor = "grabbing";
+      }
+    }
+
+    if (mapCanvasMode === "grid") {
+      const frame = mapLastDrawFrame;
+      if (!frame) return;
+      if (mapGridDrawZone) {
+        // 그리기 모드: 첫 클릭 → 앵커 설정
+        e.preventDefault();
+        const [wx, wy] = clientToWorldWithView(canvas, e.clientX, e.clientY, frame, mapDxfCanvasView);
+        mapGridDrawAnchor = { x: wx, y: wy };
+        mapMouseWorldXY = [wx, wy];
+        try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+        canvas.style.cursor = "crosshair";
+        return;
+      }
+      const h = hitTestGridHandle(canvas, e.clientX, e.clientY);
+      if (h) {
+        e.preventDefault();
+        mapGridDragHandle = h;
+        try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+        canvas.style.cursor = "grabbing";
+      }
+    }
+  });
+
+  // pointermove → 슬립 핸들 드래그
+  canvas.addEventListener("pointermove", (e) => {
+    if (mapSlipDragHandle) {
+      const frame = mapLastDrawFrame;
+      if (!frame) return;
+      const [wx, wyRaw] = clientToWorldWithView(canvas, e.clientX, e.clientY, frame, mapDxfCanvasView);
+      // Y를 지형 표면(DXF 리즌 경계 최대 Y)에 스냅
+      const wy = getTerrainSurfaceY(wx) ?? wyRaw;
+
+      const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+      if (!row) return;
+      initRowExtras(row);
+
+      const base = getEffectiveSlipPts(row) ?? {};
+      if (!row.slipPts) {
+        row.slipPts = {
+          leftSideLeftPt:   { x: Number(base.leftSideLeftPt?.x   ?? base.ll?.x ?? 0), y: Number(base.leftSideLeftPt?.y   ?? base.ll?.y ?? 0) },
+          leftSideRightPt:  { x: Number(base.leftSideRightPt?.x  ?? base.lr?.x ?? 0), y: Number(base.leftSideRightPt?.y  ?? base.lr?.y ?? 0) },
+          rightSideLeftPt:  { x: Number(base.rightSideLeftPt?.x  ?? base.rl?.x ?? 0), y: Number(base.rightSideLeftPt?.y  ?? base.rl?.y ?? 0) },
+          rightSideRightPt: { x: Number(base.rightSideRightPt?.x ?? base.rr?.x ?? 0), y: Number(base.rightSideRightPt?.y ?? base.rr?.y ?? 0) },
+          leftInc:   base.leftInc   ?? 20,
+          rightInc:  base.rightInc  ?? 20,
+          radiusInc: base.radiusInc ?? 20,
+        };
+      }
+      const keyMap = {
+        ll: "leftSideLeftPt",
+        lr: "leftSideRightPt",
+        rl: "rightSideLeftPt",
+        rr: "rightSideRightPt",
+      };
+      const ptKey = keyMap[mapSlipDragHandle.handle];
+      if (ptKey) row.slipPts[ptKey] = { x: wx, y: wy };
+      syncSlipPanelFromRow();
+      redrawMapDxfPreview();
+    }
+
+    if (mapGridDrawAnchor) {
+      // 사각형 그리기 중 — 현재 커서 위치로 프리뷰 갱신
+      const frame = mapLastDrawFrame;
+      if (!frame) return;
+      const [wx, wy] = clientToWorldWithView(canvas, e.clientX, e.clientY, frame, mapDxfCanvasView);
+      mapMouseWorldXY = [wx, wy];
+      redrawMapDxfPreview();
+      return;
+    }
+
+    if (mapGridDragHandle) {
+      const frame = mapLastDrawFrame;
+      if (!frame) return;
+      const [wx, wy] = clientToWorldWithView(canvas, e.clientX, e.clientY, frame, mapDxfCanvasView);
+
+      const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+      if (!row) return;
+      initRowExtras(row);
+      if (!row.gridData) row.gridData = {
+        grid:   { ul: null, ll: null, lr: null, ur: null, numXInc: 10, numYInc: 10 },
+        radius: { ul: null, ll: null, lr: null, ur: null, numInc: 20 },
+      };
+      row.gridData[mapGridDragHandle.zone][mapGridDragHandle.corner] = { x: wx, y: wy };
+      syncGridPanelFromRow();
+      redrawMapDxfPreview();
+    }
+  });
+
+  // pointerup → 드래그 종료
+  canvas.addEventListener("pointerup", (e) => {
+    if (mapGridDrawAnchor) {
+      const frame = mapLastDrawFrame;
+      if (frame) {
+        const [wx, wy] = clientToWorldWithView(canvas, e.clientX, e.clientY, frame, mapDxfCanvasView);
+        const r = rectFromAnchorCurrent(mapGridDrawAnchor.x, mapGridDrawAnchor.y, wx, wy);
+        const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+        if (row && mapGridDrawZone) {
+          initRowExtras(row);
+          if (!row.gridData) row.gridData = {
+            grid:   { ul: null, ll: null, lr: null, ur: null, numXInc: 10, numYInc: 10 },
+            radius: { ul: null, ll: null, lr: null, ur: null, numInc: 20 },
+          };
+          row.gridData[mapGridDrawZone].ul = r.ul;
+          row.gridData[mapGridDrawZone].ll = r.ll;
+          row.gridData[mapGridDrawZone].lr = r.lr;
+          row.gridData[mapGridDrawZone].ur = r.ur;
+          syncGridPanelFromRow();
+        }
+      }
+      mapGridDrawAnchor = null;
+      mapMouseWorldXY = null;
+      try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      canvas.style.cursor = mapGridDrawZone ? "crosshair" : "default";
+      redrawMapDxfPreview();
+      return;
+    }
+
+    if (mapSlipDragHandle) {
+      mapSlipDragHandle = null;
+      try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      canvas.style.cursor = mapCanvasMode === "slip" ? "default" : "";
+      flushSlipPanelToRow();
+      redrawMapDxfPreview();
+    }
+    if (mapGridDragHandle) {
+      mapGridDragHandle = null;
+      try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      canvas.style.cursor = mapCanvasMode === "grid" ? "default" : "";
+      flushGridPanelToRow();
+      redrawMapDxfPreview();
+    }
+  });
+
+  canvas.addEventListener("pointercancel", () => {
+    mapSlipDragHandle = null;
+    mapGridDragHandle = null;
+    mapGridDrawAnchor = null;
+    mapMouseWorldXY = null;
+  });
 }
 
 function bindMapDxfCanvasInteractions() {
@@ -1545,6 +2633,8 @@ function bindMapDxfCanvasInteractions() {
       mapCanvasSuppressNextClick = false;
       return;
     }
+    // 상재하중·슬립 모드는 pointerdown에서 처리, 여기서는 차단
+    if (mapCanvasMode !== "paint") return;
     if (!mapPaintMaterialId) return;
     const mid = parseInt(mapPaintMaterialId, 10);
     if (!Number.isFinite(mid) || mid === 0) return;
@@ -1798,12 +2888,61 @@ async function runMapping() {
       throw new Error("지오메트리 빌드 결과가 없습니다.");
     }
 
+    // ── 슬립 진입/출구 (해석별 적용) ──
     const slipComputed = computeSlipEntryExitFromDxf(dxfLayers, geometryLayers);
-    applySlipEntryExitToAllSlopeItems(doc, slipComputed, log);
+    const slopeItemsEl = findFirstTag(doc, "SlopeItems");
+    if (slopeItemsEl) {
+      for (const row of mapAnalysesState.rows) {
+        initRowExtras(row);
+        const slipData = row.slipPts ?? slipComputed;
+        // 해당 SlopeItem 찾기
+        let targetSi = null;
+        for (const si of allChildEl(slopeItemsEl, "SlopeItem")) {
+          const aidEl = firstChildEl(si, "AnalysisID");
+          if (aidEl && String(aidEl.textContent?.trim()) === String(row.id)) { targetSi = si; break; }
+        }
+        if (targetSi && slipData) {
+          // 단일 SlopeItem에 SlipEntryExit 적용 (slip-entry-exit.js 패턴)
+          let entry = firstChildEl(targetSi, "Entry");
+          if (!entry) { entry = doc.createElement("Entry"); targetSi.appendChild(entry); }
+          let seeEl = firstChildEl(entry, "SlipEntryExit");
+          if (!seeEl) {
+            seeEl = doc.createElement("SlipEntryExit");
+            const grid = firstChildEl(entry, "SlipSurfaceGrid");
+            const dp = firstChildEl(entry, "DataPoints");
+            if (grid?.nextSibling) entry.insertBefore(seeEl, grid.nextSibling);
+            else if (dp?.nextSibling) entry.insertBefore(seeEl, dp.nextSibling);
+            else entry.appendChild(seeEl);
+          }
+          const removeChildren = (el) => { while (el.firstChild) el.removeChild(el.firstChild); };
+          removeChildren(seeEl);
+          const fmt = (v) => { const n = Number(v); if (!Number.isFinite(n)) return "0"; let s = n.toFixed(8).replace(/\.?0+$/, "").replace(/\.$/, ""); return s || "0"; };
+          const setPt = (tag, x, y) => { const el = doc.createElement(tag); el.setAttribute("X", fmt(x)); el.setAttribute("Y", fmt(y)); seeEl.appendChild(el); };
+          const setT  = (tag, v)    => { const el = doc.createElement(tag); el.textContent = fmt(v); seeEl.appendChild(el); };
+          const ll = slipData.leftSideLeftPt  ?? slipData.ll  ?? { x: 0, y: 0 };
+          const lr = slipData.leftSideRightPt ?? slipData.lr  ?? { x: 0, y: 0 };
+          const rl = slipData.rightSideLeftPt ?? slipData.rl  ?? { x: 0, y: 0 };
+          const rr = slipData.rightSideRightPt?? slipData.rr  ?? { x: 0, y: 0 };
+          setPt("LeftSideLeftPt",   ll.x, ll.y);
+          setPt("LeftSideRightPt",  lr.x, lr.y);
+          setT("LeftInc",  slipData.leftInc  ?? 20);
+          setPt("RightSideLeftPt",  rl.x, rl.y);
+          setPt("RightSideRightPt", rr.x, rr.y);
+          setT("RightInc", slipData.rightInc ?? 20);
+          setT("RadiusInc",slipData.radiusInc?? 20);
+          log(`  SlipEntryExit → Analysis ${row.id}${row.slipPts ? " (사용자 지정)" : " (DXF 자동)"}`);
+        } else if (targetSi && !slipData) {
+          applySlipEntryExitToAllSlopeItems(doc, slipComputed, log);
+        }
+      }
+    } else {
+      applySlipEntryExitToAllSlopeItems(doc, slipComputed, log);
+    }
 
     setProgress("map-progress", 72);
     let totalRum = 0;
     for (const row of mapAnalysesState.rows) {
+      initRowExtras(row);
       const n = syncMaterialsForAnalysisFromRegions(
         doc,
         row.regionMaterials,
@@ -1811,9 +2950,178 @@ async function runMapping() {
         log,
       );
       totalRum += n;
-      log(
-        `  └ Analysis ID=${row.id} 「${row.title}」 RegionUsesMaterials ${n}건`,
-      );
+
+      // ── 수평지진계수 (Seismic) ──
+      if (slopeItemsEl) {
+        for (const si of allChildEl(slopeItemsEl, "SlopeItem")) {
+          const aidEl = firstChildEl(si, "AnalysisID");
+          if (!aidEl || String(aidEl.textContent?.trim()) !== String(row.id)) continue;
+          const entry = firstChildEl(si, "Entry");
+          if (!entry) break;
+          let seismicEl = firstChildEl(entry, "Seismic");
+          if (!seismicEl) {
+            seismicEl = doc.createElement("Seismic");
+            entry.insertBefore(seismicEl, entry.firstChild);
+          }
+          seismicEl.setAttribute("Horizontal", row.seismicH ?? "");
+          seismicEl.setAttribute("Vertical", "");
+          if (row.seismicH?.trim()) log(`  Seismic kh=${row.seismicH} → Analysis ${row.id}`);
+          break;
+        }
+      }
+
+      // ── 상재하중 (PressureLines) ──
+      if (slopeItemsEl && row.pressureLines?.length) {
+        for (const si of allChildEl(slopeItemsEl, "SlopeItem")) {
+          const aidEl = firstChildEl(si, "AnalysisID");
+          if (!aidEl || String(aidEl.textContent?.trim()) !== String(row.id)) continue;
+          const entry = firstChildEl(si, "Entry");
+          if (!entry) break;
+          // Entry/DataPoints에 새 좌표점 추가
+          let dpRoot = firstChildEl(entry, "DataPoints");
+          if (!dpRoot) { dpRoot = doc.createElement("DataPoints"); entry.insertBefore(dpRoot, entry.firstChild); }
+          // 현재 최대 DataPoint Number 파악
+          let maxNum = 0;
+          for (const dp of allChildEl(dpRoot, "DataPoint")) {
+            if (!dp.hasAttribute("X")) continue;
+            const n = parseInt(dp.getAttribute("Number") ?? "0", 10);
+            if (Number.isFinite(n)) maxNum = Math.max(maxNum, n);
+          }
+          const fmtC = (v) => { const n = Number(v); if (!Number.isFinite(n)) return "0"; let s = n.toFixed(8).replace(/\.?0+$/, "").replace(/\.$/, ""); return s || "0"; };
+          // 기존 PressureLines 제거 후 재생성
+          let plsEl = firstChildEl(entry, "PressureLines");
+          if (plsEl) entry.removeChild(plsEl);
+          plsEl = doc.createElement("PressureLines");
+          plsEl.setAttribute("Len", String(row.pressureLines.length));
+          let ptOffset = 0;
+          row.pressureLines.forEach((pl, pi) => {
+            // 구 형식 호환
+            const pts = pl.points
+              ? pl.points
+              : [{ x: pl.x1, y: pl.y1 }, { x: pl.x2, y: pl.y2 }];
+            const startNum = maxNum + 1 + ptOffset;
+            // DataPoint 추가 (N개 노드)
+            pts.forEach((pt, j) => {
+              const dp = doc.createElement("DataPoint");
+              dp.setAttribute("Number", String(startNum + j));
+              dp.setAttribute("X", fmtC(pt.x));
+              dp.setAttribute("Y", fmtC(pt.y));
+              dpRoot.appendChild(dp);
+            });
+            ptOffset += pts.length;
+            dpRoot.setAttribute("Len", String(allChildEl(dpRoot, "DataPoint").length));
+            // PressureLine 요소
+            const plEl = doc.createElement("PressureLine");
+            const idEl = doc.createElement("ID"); idEl.textContent = String(pi + 1);
+            const dpsEl = doc.createElement("DataPoints"); dpsEl.setAttribute("Len", String(pts.length));
+            pts.forEach((_, j) => {
+              const ref = doc.createElement("DataPoint"); ref.textContent = String(startNum + j);
+              dpsEl.appendChild(ref);
+            });
+            const pEl = doc.createElement("Pressure"); pEl.textContent = String(pl.pressure);
+            plEl.appendChild(idEl); plEl.appendChild(dpsEl); plEl.appendChild(pEl);
+            plsEl.appendChild(plEl);
+          });
+          // SlipSurfaceLimit 앞에 삽입 (없으면 Entry 끝)
+          const ssl = firstChildEl(entry, "SlipSurfaceLimit");
+          if (ssl) entry.insertBefore(plsEl, ssl);
+          else entry.appendChild(plsEl);
+          log(`  PressureLines ${row.pressureLines.length}건 → Analysis ${row.id}`);
+          break;
+        }
+      }
+
+      // ── 격자 탐색 (SlipSurfaceGrid + SlipSurfaceRadius) ──
+      if (slopeItemsEl && row.gridData) {
+        const gd = row.gridData;
+        const hasGrid = gd.grid && (gd.grid.ul || gd.grid.ll || gd.grid.lr);
+        const hasRadius = gd.radius && (gd.radius.ul || gd.radius.ll || gd.radius.lr || gd.radius.ur);
+        if (hasGrid || hasRadius) {
+          for (const si of allChildEl(slopeItemsEl, "SlopeItem")) {
+            const aidEl = firstChildEl(si, "AnalysisID");
+            if (!aidEl || String(aidEl.textContent?.trim()) !== String(row.id)) continue;
+            let entry = firstChildEl(si, "Entry");
+            if (!entry) { entry = doc.createElement("Entry"); si.appendChild(entry); }
+
+            let dpRoot = firstChildEl(entry, "DataPoints");
+            if (!dpRoot) { dpRoot = doc.createElement("DataPoints"); entry.insertBefore(dpRoot, entry.firstChild); }
+            let maxNum2 = 0;
+            for (const dp of allChildEl(dpRoot, "DataPoint")) {
+              if (!dp.hasAttribute("X")) continue;
+              const dn = parseInt(dp.getAttribute("Number") ?? "0", 10);
+              if (Number.isFinite(dn)) maxNum2 = Math.max(maxNum2, dn);
+            }
+            const fmtG = (v) => { const num = Number(v); if (!Number.isFinite(num)) return "0"; let s = num.toFixed(8).replace(/\.?0+$/, "").replace(/\.$/, ""); return s || "0"; };
+
+            const addDp = (x, y) => {
+              maxNum2++;
+              const dp = doc.createElement("DataPoint");
+              dp.setAttribute("Number", String(maxNum2));
+              dp.setAttribute("X", fmtG(x));
+              dp.setAttribute("Y", fmtG(y));
+              dpRoot.appendChild(dp);
+              dpRoot.setAttribute("Len", String(allChildEl(dpRoot, "DataPoint").length));
+              return maxNum2;
+            };
+
+            // SlipSurfaceGrid 작성
+            if (hasGrid) {
+              const g = gd.grid;
+              let gridEl = firstChildEl(entry, "SlipSurfaceGrid");
+              if (!gridEl) { gridEl = doc.createElement("SlipSurfaceGrid"); }
+              else { gridEl.parentNode.removeChild(gridEl); gridEl = doc.createElement("SlipSurfaceGrid"); }
+
+              if (g.ul) gridEl.setAttribute("PointUL", String(addDp(g.ul.x, g.ul.y)));
+              if (g.ll) gridEl.setAttribute("PointLL", String(addDp(g.ll.x, g.ll.y)));
+              if (g.lr) gridEl.setAttribute("PointLR", String(addDp(g.lr.x, g.lr.y)));
+              if (g.ur) gridEl.setAttribute("PointUR", String(addDp(g.ur.x, g.ur.y)));
+              gridEl.setAttribute("NumXInc", String(g.numXInc ?? 10));
+              gridEl.setAttribute("NumYInc", String(g.numYInc ?? 10));
+              gridEl.setAttribute("ArrowCorner", "LowerLeft");
+
+              const seeEl = firstChildEl(entry, "SlipEntryExit");
+              const dpEl  = firstChildEl(entry, "DataPoints");
+              if (seeEl) entry.insertBefore(gridEl, seeEl);
+              else if (dpEl?.nextSibling) entry.insertBefore(gridEl, dpEl.nextSibling);
+              else entry.appendChild(gridEl);
+              log(`  SlipSurfaceGrid → Analysis ${row.id} (${g.numXInc ?? 10}×${g.numYInc ?? 10})`);
+            }
+
+            // SlipSurfaceRadius 작성
+            if (hasRadius) {
+              const r = gd.radius;
+              let radEl = firstChildEl(entry, "SlipSurfaceRadius");
+              if (!radEl) { radEl = doc.createElement("SlipSurfaceRadius"); }
+              else { radEl.parentNode.removeChild(radEl); radEl = doc.createElement("SlipSurfaceRadius"); }
+
+              const ulN = r.ul ? addDp(r.ul.x, r.ul.y) : null;
+              const llN = r.ll ? addDp(r.ll.x, r.ll.y) : null;
+              const lrN = r.lr ? addDp(r.lr.x, r.lr.y) : null;
+              const urN = r.ur ? addDp(r.ur.x, r.ur.y) : null;
+              if (ulN) radEl.setAttribute("PointUL", String(ulN));
+              if (urN) radEl.setAttribute("PointUR", String(urN));
+              if (llN) radEl.setAttribute("PointLL", String(llN));
+              if (lrN) radEl.setAttribute("PointLR", String(lrN));
+              radEl.setAttribute("NumInc", String(r.numInc ?? 20));
+              if (ulN) radEl.setAttribute("PointLeftCorner", String(ulN));
+              if (urN) radEl.setAttribute("PointRightCorner", String(urN));
+              radEl.setAttribute("UsePoints", "1");
+
+              const seeEl2 = firstChildEl(entry, "SlipEntryExit");
+              const gridEl2 = firstChildEl(entry, "SlipSurfaceGrid");
+              const sslEl = firstChildEl(entry, "SlipSurfaceLimit");
+              if (sslEl) entry.insertBefore(radEl, sslEl);
+              else if (seeEl2?.nextSibling) entry.insertBefore(radEl, seeEl2.nextSibling);
+              else if (gridEl2?.nextSibling) entry.insertBefore(radEl, gridEl2.nextSibling);
+              else entry.appendChild(radEl);
+              log(`  SlipSurfaceRadius → Analysis ${row.id} (NumInc=${r.numInc ?? 20})`);
+            }
+            break;
+          }
+        }
+      }
+
+      log(`  └ Analysis ID=${row.id} 「${row.title}」 RegionUsesMaterials ${n}건`);
     }
 
     syncWaterPointsFromTable();
@@ -1953,15 +3261,39 @@ document.addEventListener("DOMContentLoaded", () => {
           def != null && Number.isFinite(def) ? def : null;
       }
     }
-    mapAnalysesState.rows.push({
+    const newRow = {
       id: newId,
       title: `해석 ${newId}`,
       regionMaterials,
-    });
+    };
+    initRowExtras(newRow);
+    mapAnalysesState.rows.push(newRow);
     mapAnalysesState.activeIndex = mapAnalysesState.rows.length - 1;
     renderMapAnalysisRows();
     refillMapRegionTbodyFromCache();
     redrawMapDxfPreview();
+  });
+  document.getElementById("map-analysis-clone").addEventListener("click", () => {
+    flushActiveAnalysisRegionsFromTable();
+    const sourceRow = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+    if (!sourceRow) return;
+    initRowExtras(sourceRow);
+    const maxId = Math.max(0, ...mapAnalysesState.rows.map((r) => r.id));
+    const newId = maxId + 1;
+    const newRow = {
+      id: newId,
+      title: `${sourceRow.title} (복제)`,
+      regionMaterials: { ...sourceRow.regionMaterials },
+      seismicH: sourceRow.seismicH,
+      pressureLines: sourceRow.pressureLines.map(pl => ({ ...pl })),
+      slipPts: sourceRow.slipPts ? { ...sourceRow.slipPts } : null,
+    };
+    mapAnalysesState.rows.push(newRow);
+    mapAnalysesState.activeIndex = mapAnalysesState.rows.length - 1;
+    renderMapAnalysisRows();
+    refillMapRegionTbodyFromCache();
+    redrawMapDxfPreview();
+    toast(`「${sourceRow.title}」 → ID ${newId}으로 복제되었습니다.`);
   });
   initGszEditor();
   initResultViewer();
@@ -2062,6 +3394,145 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     reader.readAsText(file);
   });
+  // ─── 그리기 모드 버튼 ────────────────────────────────────────
+  document.getElementById("map-tool-paint")?.addEventListener("click", () => switchMapCanvasMode("paint"));
+  document.getElementById("map-tool-pressure")?.addEventListener("click", () => switchMapCanvasMode("pressure"));
+  document.getElementById("map-tool-slip")?.addEventListener("click", () => switchMapCanvasMode("slip"));
+  document.getElementById("map-tool-grid")?.addEventListener("click", () => switchMapCanvasMode("grid"));
+
+  // ─── 레이어 가시성 토글 ───────────────────────────────────────
+  ["materials", "pressure", "slip", "nodes", "grid"].forEach((key) => {
+    const btn = document.getElementById(`map-layer-${key}`);
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      mapLayerVisible[key] = !mapLayerVisible[key];
+      btn.classList.toggle("map-layer-btn-off", !mapLayerVisible[key]);
+      btn.title = mapLayerVisible[key] ? `${btn.dataset.label} 숨기기` : `${btn.dataset.label} 표시`;
+      redrawMapDxfPreview();
+      drawMapOverlayOnCanvas();
+    });
+  });
+
+  // ─── 상재하중 패널 확인/취소 ─────────────────────────────────
+  document.getElementById("map-pressure-done")?.addEventListener("click", () => {
+    if (mapPressurePoints.length < 2) return;
+    const form = document.getElementById("map-pressure-form");
+    const hint = document.getElementById("map-pressure-hint");
+    const doneBtn = document.getElementById("map-pressure-done");
+    if (form) form.style.display = "";
+    if (hint) hint.style.display = "none";
+    if (doneBtn) doneBtn.style.display = "none";
+    const kpaInp = document.getElementById("map-pressure-kpa");
+    if (kpaInp) { kpaInp.value = ""; kpaInp.focus(); }
+  });
+  document.getElementById("map-pressure-ok")?.addEventListener("click", () => {
+    const kpaInp = document.getElementById("map-pressure-kpa");
+    const val = parseFloat(kpaInp?.value ?? "");
+    if (!Number.isFinite(val) || val <= 0) { toast("유효한 압력값(kPa > 0)을 입력하세요.", false); return; }
+    if (mapPressurePoints.length < 2) return;
+    const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+    if (!row) return;
+    initRowExtras(row);
+    const nPts = mapPressurePoints.length;
+    row.pressureLines.push({
+      id: String(row.pressureLines.length + 1),
+      points: mapPressurePoints.map(p => ({ ...p })),
+      pressure: String(val),
+    });
+    mapPressurePoints = [];
+    const form = document.getElementById("map-pressure-form");
+    const hint = document.getElementById("map-pressure-hint");
+    if (form) form.style.display = "none";
+    if (hint) { hint.textContent = "캔버스에서 첫 번째 점을 클릭하세요."; hint.style.display = ""; }
+    renderPressureListPanel();
+    redrawMapDxfPreview();
+    toast(`상재하중 ${val} kPa 추가됨 (${nPts}개 노드)`);
+  });
+  document.getElementById("map-pressure-kpa")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") document.getElementById("map-pressure-ok")?.click();
+  });
+  document.getElementById("map-pressure-cancel")?.addEventListener("click", () => {
+    mapPressurePoints = [];
+    mapMouseWorldXY = null;
+    mapSnapNode = null;
+    const form = document.getElementById("map-pressure-form");
+    const hint = document.getElementById("map-pressure-hint");
+    const doneBtn = document.getElementById("map-pressure-done");
+    if (form) form.style.display = "none";
+    if (hint) { hint.textContent = "캔버스에서 첫 번째 점을 클릭하세요."; hint.style.display = ""; }
+    if (doneBtn) doneBtn.style.display = "none";
+    redrawMapDxfPreview();
+  });
+
+  // ─── 슬립 패널 입력 동기화 ───────────────────────────────────
+  ["map-slip-ll-x","map-slip-ll-y",
+   "map-slip-lr-x","map-slip-lr-y",
+   "map-slip-rl-x","map-slip-rl-y",
+   "map-slip-rr-x","map-slip-rr-y",
+   "map-slip-linc","map-slip-rinc","map-slip-radinc"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => {
+      flushSlipPanelToRow();
+      redrawMapDxfPreview();
+    });
+  });
+  document.getElementById("map-slip-auto")?.addEventListener("click", () => {
+    const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+    if (row) { initRowExtras(row); row.slipPts = null; }
+    syncSlipPanelFromRow();
+    redrawMapDxfPreview();
+    toast("슬립 진입/출구가 DXF 자동값으로 초기화됨");
+  });
+
+  // ─── 격자 탐색 패널 입력 동기화 ──────────────────────────────
+  ["map-grid-ul-x","map-grid-ul-y","map-grid-ll-x","map-grid-ll-y",
+   "map-grid-lr-x","map-grid-lr-y","map-grid-ur-x","map-grid-ur-y",
+   "map-grid-xinc","map-grid-yinc",
+   "map-rad-ul-x","map-rad-ul-y","map-rad-ll-x","map-rad-ll-y",
+   "map-rad-lr-x","map-rad-lr-y","map-rad-ur-x","map-rad-ur-y",
+   "map-rad-ninc"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => {
+      flushGridPanelToRow();
+      redrawMapDxfPreview();
+    });
+  });
+  document.getElementById("map-grid-auto")?.addEventListener("click", () => {
+    const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+    if (!row) return;
+    autoInitGridDataFromDxf(row);
+  });
+  // 격자 그리기 존 토글 (Grid/Radius 그리기 버튼)
+  function setGridDrawZone(zone) {
+    mapGridDrawZone = mapGridDrawZone === zone ? null : zone;
+    mapGridDrawAnchor = null;
+    mapMouseWorldXY = null;
+    ["map-grid-draw-grid", "map-grid-draw-radius"].forEach((id) => {
+      document.getElementById(id)?.classList.remove("active");
+    });
+    if (mapGridDrawZone) {
+      document.getElementById(`map-grid-draw-${mapGridDrawZone}`)?.classList.add("active");
+    }
+    const canvas = document.getElementById("map-dxf-canvas");
+    if (canvas) {
+      canvas.classList.toggle("map-canvas-grid-draw", !!mapGridDrawZone);
+      canvas.style.cursor = mapGridDrawZone ? "crosshair" : "default";
+    }
+  }
+  document.getElementById("map-grid-draw-grid")?.addEventListener("click", () => setGridDrawZone("grid"));
+  document.getElementById("map-grid-draw-radius")?.addEventListener("click", () => setGridDrawZone("radius"));
+
+  document.getElementById("map-grid-clear")?.addEventListener("click", () => {
+    const row = mapAnalysesState.rows[mapAnalysesState.activeIndex];
+    if (row) { initRowExtras(row); row.gridData = null; }
+    const inputs = ["map-grid-ul-x","map-grid-ul-y","map-grid-ll-x","map-grid-ll-y",
+      "map-grid-lr-x","map-grid-lr-y","map-grid-ur-x","map-grid-ur-y",
+      "map-rad-ul-x","map-rad-ul-y","map-rad-ll-x","map-rad-ll-y",
+      "map-rad-lr-x","map-rad-lr-y","map-rad-ur-x","map-rad-ur-y"];
+    inputs.forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+    redrawMapDxfPreview();
+    toast("격자 탐색 데이터가 삭제되었습니다.");
+  });
+
+  bindMapDrawModeCanvas();
   document.getElementById("map-scan").addEventListener("click", runScanLayers);
   document.getElementById("map-run").addEventListener("click", runMapping);
   document.getElementById("map-water-add-row").addEventListener("click", () => {
