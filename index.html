@@ -627,6 +627,32 @@
             style="display:none;width:72px;padding:2px 6px;font-size:0.88em;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px" />
           <span style="font-size:0.8em;color:var(--muted)">— 드래그 핸들로도 조절 가능</span>
         </div>
+
+        <!-- 파괴원호 스타일 -->
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+          <div style="font-size:0.8em;color:var(--muted);margin-bottom:6px;font-weight:600;letter-spacing:0.03em">파괴원호 스타일</div>
+
+          <div class="rv-style-row">
+            <span class="rv-style-label">선 두께</span>
+            <input type="range" id="rv-slip-linewidth" class="rv-slider" min="1" max="6" step="0.5" value="2">
+            <span id="rv-slip-linewidth-val" class="rv-style-val">2</span>
+            <span class="rv-style-unit">px</span>
+          </div>
+
+          <div class="rv-style-row" style="margin-top:5px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:0.9em">
+              <input type="checkbox" id="rv-slip-outline" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
+              <span>외곽선 + 점선 모드</span>
+            </label>
+          </div>
+
+          <div class="rv-style-row" style="margin-top:5px">
+            <span class="rv-style-label">FOS 크기</span>
+            <input type="range" id="rv-slip-fosscale" class="rv-slider" min="0.5" max="2.0" step="0.1" value="1.0">
+            <span id="rv-slip-fosscale-val" class="rv-style-val">1.0</span>
+            <span class="rv-style-unit">×</span>
+          </div>
+        </div>
       </div>
 
       <!-- 캔버스 + 결과 패널 -->

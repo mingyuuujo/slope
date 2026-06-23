@@ -32,6 +32,13 @@ let rvFixedHeight = null;
 let rvFixedWidth  = null;   // 오른쪽 경계 (full canvas 기준 px), null = 자동
 let rvCropLeft    = 0;      // 왼쪽 크롭 px (0 = 자르지 않음)
 
+// 파괴원호 스타일
+let rvSlipStyle = {
+  lineWidth: 2,    // 선 두께 (px)
+  outline:   false, // 외곽선 halo + 점선 모드
+  fosScale:  1.0,  // FOS 글자 크기 배율
+};
+
 // ─── DOM 헬퍼 ─────────────────────────────────────────────────
 const $  = (id) => document.getElementById(id);
 
@@ -595,7 +602,8 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
 
   // 파괴원호 + FOS 텍스트
   if (slip && Number.isFinite(slip.centerX)) {
-    drawSlipCircle(ctx, slip, tf, W, H, topPx, assignedRegions, toC, isDark);
+    drawSlipCircle(ctx, slip, tf, W, H, topPx, assignedRegions, toC, isDark,
+      { ...(opts.slipStyle ?? {}), forExcel: !!opts.forExcel });
   }
 
   return tf;
@@ -605,7 +613,7 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
  * 파괴원호: 물성치 할당된 리즌만 클리핑 마스크 사용.
  * FOS 텍스트는 상단 topPx 영역.
  */
-function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark) {
+function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, slipStyle = {}) {
   const { centerX: cx, centerY: cy, radius: r, fos } = slip;
   const ccx = tf.offX + (cx - tf.minX) * tf.scale;
   const ccy = tf.offY - (cy - tf.minY) * tf.scale;
@@ -656,14 +664,40 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark) {
   }
 
   const strokeArc = (sa, ea, acw) => {
-    ctx.save();
-    ctx.setLineDash([]);
-    ctx.beginPath();
-    ctx.arc(ccx, ccy, cr, sa, ea, acw);
-    ctx.strokeStyle = "#111111";
-    ctx.lineWidth   = 2;
-    ctx.stroke();
-    ctx.restore();
+    const lw        = slipStyle.lineWidth ?? 2;
+    const outline   = slipStyle.outline   ?? false;
+    const haloColor = slipStyle.forExcel
+      ? "rgba(220,220,220,0.95)"   // Excel 흰 배경 → 연회색 halo
+      : "rgba(255,255,255,0.92)";  // 웹 → 흰색 halo
+    if (outline) {
+      // 1패스: halo 외곽선 (실선)
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(ccx, ccy, cr, sa, ea, acw);
+      ctx.strokeStyle = haloColor;
+      ctx.lineWidth   = lw + 5;
+      ctx.setLineDash([]);
+      ctx.stroke();
+      ctx.restore();
+      // 2패스: 메인색 점선
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(ccx, ccy, cr, sa, ea, acw);
+      ctx.strokeStyle = "#111111";
+      ctx.lineWidth   = lw;
+      ctx.setLineDash([10, 6]);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(ccx, ccy, cr, sa, ea, acw);
+      ctx.strokeStyle = "#111111";
+      ctx.lineWidth   = lw;
+      ctx.stroke();
+      ctx.restore();
+    }
   };
 
   if (intersections.length >= 2) {
@@ -701,7 +735,7 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark) {
   }
 
   const centerVisible = ccx >= 0 && ccx <= W && ccy >= topPx && ccy <= H;
-  const fontSize      = Math.min(28, topPx * 0.55);
+  const fontSize      = Math.min(28, topPx * 0.55) * (slipStyle.fosScale ?? 1.0);
 
   if (centerVisible) {
     // 중심 마커
@@ -995,7 +1029,7 @@ async function updateCanvas(idx) {
   canvas.style.width = hasCrop ? naturalW + "px" : "";
 
   renderResultCanvas(canvas, rvState.regions, rvState.materials, regionMatMap, slip, surchargeLoads, piezoLines,
-    { viewRegion: rvViewRegion, fixedHeight: rvFixedHeight });
+    { viewRegion: rvViewRegion, fixedHeight: rvFixedHeight, slipStyle: rvSlipStyle });
   updateResizeOverlay();
   updateInfoPanel(result);
 }
@@ -1411,7 +1445,7 @@ async function handleExcelDownload() {
         ? { centerX: caseResult.centerX, centerY: caseResult.centerY, radius: caseResult.radius, fos: caseResult.fos }
         : null;
       renderResultCanvas(offCanvas, rvState.regions, rvState.materials, rmap, slip, surchargeLoads, piezoLines,
-        { forExcel: true, width: excelRenderW, viewRegion: rvViewRegion, fixedHeight: excelFixedH });
+        { forExcel: true, width: excelRenderW, viewRegion: rvViewRegion, fixedHeight: excelFixedH, slipStyle: rvSlipStyle });
       if (!hasCropW) return offCanvas.toDataURL("image/png");
       // 가시 영역만 크롭하여 CANVAS_W × excelH 크기로 출력
       const excelH  = offCanvas.height;
@@ -1675,6 +1709,34 @@ export function initResultViewer() {
   }
 
   initResizeHandles();
+
+  // 파괴원호 스타일 컨트롤
+  const slipLwSlider  = $("rv-slip-linewidth");
+  const slipLwVal     = $("rv-slip-linewidth-val");
+  const slipOutline   = $("rv-slip-outline");
+  const slipFosSlider = $("rv-slip-fosscale");
+  const slipFosVal    = $("rv-slip-fosscale-val");
+
+  if (slipLwSlider) {
+    slipLwSlider.addEventListener("input", () => {
+      rvSlipStyle.lineWidth = parseFloat(slipLwSlider.value);
+      if (slipLwVal) slipLwVal.textContent = slipLwSlider.value;
+      if (rvState.allResults.length) updateCanvas(rvState.selectedIdx);
+    });
+  }
+  if (slipOutline) {
+    slipOutline.addEventListener("change", () => {
+      rvSlipStyle.outline = slipOutline.checked;
+      if (rvState.allResults.length) updateCanvas(rvState.selectedIdx);
+    });
+  }
+  if (slipFosSlider) {
+    slipFosSlider.addEventListener("input", () => {
+      rvSlipStyle.fosScale = parseFloat(slipFosSlider.value);
+      if (slipFosVal) slipFosVal.textContent = parseFloat(slipFosSlider.value).toFixed(1);
+      if (rvState.allResults.length) updateCanvas(rvState.selectedIdx);
+    });
+  }
 
   const copyTableBtn = $("rv-copy-table-btn");
   if (copyTableBtn) {

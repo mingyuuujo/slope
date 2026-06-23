@@ -1634,6 +1634,37 @@ table.data-table td.readonly-cell input {
   margin-bottom: 4px;
 }
 
+/* 파괴원호 스타일 컨트롤 행 */
+.rv-style-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rv-style-label {
+  font-size: 0.88em;
+  color: var(--text);
+  width: 54px;
+  flex-shrink: 0;
+}
+.rv-style-val {
+  font-size: 0.88em;
+  color: var(--accent);
+  min-width: 26px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.rv-style-unit {
+  font-size: 0.82em;
+  color: var(--muted);
+}
+.rv-slider {
+  flex: 1;
+  min-width: 80px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  height: 4px;
+}
+
 .rv-canvas-wrap {
   background: var(--canvas-bg);
   border: 1px solid var(--border);
