@@ -751,6 +751,23 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
     }
   }
 
+  // LeftOption 미지정이지만 진입부가 지하인 경우:
+  // 좌측 지형면 교점이 없으면 진입 구간 Y 수평선과 원의 교점으로 각도를 직접 산출
+  if (leftAngleOverride === null && entryExit && Number.isFinite(entryExit.leftPtY)) {
+    const midX = (searchLeft + searchRight) / 2;
+    if (!intersections.some(i => i.x < midX)) {
+      const [, leftZoneYc] = toC(0, entryExit.leftPtY);
+      const dy = leftZoneYc - ccy;
+      const d2 = cr * cr - dy * dy;
+      if (d2 >= 0) {
+        const lx = ccx - Math.sqrt(d2);
+        if (lx >= searchLeft && lx <= searchRight) {
+          leftAngleOverride = Math.atan2(dy, lx - ccx);
+        }
+      }
+    }
+  }
+
   const strokeArc = (sa, ea, acw) => {
     const lw       = slipStyle.lineWidth ?? 2;
     // outlineT: 0=완전 실선, 1=완전 외곽+점선. 애니메이션 중 0~1 사이 보간값
