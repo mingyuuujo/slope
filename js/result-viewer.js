@@ -487,7 +487,7 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
     ctx.setLineDash([]);
 
     // 상단 베이스선: 지형면과 평행하게 ARROW_H_PX 위에
-    ctx.lineWidth = 2.0;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(cx1, cy1 - ARROW_H_PX);
     ctx.lineTo(cx2, cy2 - ARROW_H_PX);
