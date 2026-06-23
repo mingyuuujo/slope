@@ -634,7 +634,7 @@
 
           <div class="rv-style-row">
             <span class="rv-style-label">선 두께</span>
-            <input type="range" id="rv-slip-linewidth" class="rv-slider" min="1" max="6" step="0.5" value="2">
+            <input type="range" id="rv-slip-linewidth" class="rv-slider" min="1" max="10" step="0.5" value="2">
             <span id="rv-slip-linewidth-val" class="rv-style-val">2</span>
             <span class="rv-style-unit">px</span>
           </div>
@@ -648,9 +648,60 @@
 
           <div class="rv-style-row" style="margin-top:5px">
             <span class="rv-style-label">FOS 크기</span>
-            <input type="range" id="rv-slip-fosscale" class="rv-slider" min="0.5" max="2.0" step="0.1" value="1.0">
+            <input type="range" id="rv-slip-fosscale" class="rv-slider" min="0.5" max="5.0" step="0.1" value="1.0">
             <span id="rv-slip-fosscale-val" class="rv-style-val">1.0</span>
             <span class="rv-style-unit">×</span>
+          </div>
+
+          <div class="rv-style-row" style="margin-top:5px">
+            <span class="rv-style-label">FOS 위치</span>
+            <div id="rv-fos-align-btns" style="display:flex;gap:3px">
+              <button type="button" class="rv-align-btn rv-align-btn--active" data-align="auto" title="원호 방향에 따라 자동 결정">자동</button>
+              <button type="button" class="rv-align-btn" data-align="left" title="중심점 왼쪽에 표시">◀ 좌</button>
+              <button type="button" class="rv-align-btn" data-align="right" title="중심점 오른쪽에 표시">우 ▶</button>
+            </div>
+          </div>
+
+          <div class="rv-style-row" style="margin-top:5px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:0.9em">
+              <input type="checkbox" id="rv-fos-text-outline" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
+              <span>문자 외곽선</span>
+            </label>
+          </div>
+
+          <div style="font-size:0.8em;color:var(--muted);margin-top:10px;margin-bottom:6px;font-weight:600;letter-spacing:0.03em">색상</div>
+
+          <div class="rv-style-row">
+            <span class="rv-style-label">포락선</span>
+            <input type="color" id="rv-slip-color" value="#111111" class="rv-color-inp" title="파괴포락선 색">
+          </div>
+          <div class="rv-style-row" style="margin-top:4px">
+            <span class="rv-style-label">포락선 외곽선</span>
+            <input type="color" id="rv-slip-halo-color" value="#ffffff" class="rv-color-inp" title="포락선 외곽선 색 — 외곽선+점선 모드에서 사용">
+          </div>
+          <div class="rv-style-row" style="margin-top:4px">
+            <span class="rv-style-label" style="padding-left:10px;color:var(--muted)">포락선 외곽 두께</span>
+            <input type="range" id="rv-slip-halo-width" class="rv-slider" min="1" max="20" step="0.5" value="5">
+            <span id="rv-slip-halo-width-val" class="rv-style-val">5</span>
+            <span class="rv-style-unit">px</span>
+          </div>
+          <div class="rv-style-row" style="margin-top:4px">
+            <span class="rv-style-label">문자색</span>
+            <input type="color" id="rv-fos-color" value="#111111" class="rv-color-inp" title="FOS 안전율 문자 색">
+          </div>
+          <div class="rv-style-row" style="margin-top:4px">
+            <span class="rv-style-label">문자 밑줄</span>
+            <input type="color" id="rv-fos-underline-color" value="#111111" class="rv-color-inp" title="FOS 안전율 숫자 아래 밑줄 색">
+          </div>
+          <div class="rv-style-row" style="margin-top:4px">
+            <span class="rv-style-label">문자 외곽선</span>
+            <input type="color" id="rv-fos-outline-color" value="#ffffff" class="rv-color-inp" title="FOS 문자 외곽선 색 — 문자 외곽선 체크 시 사용">
+          </div>
+          <div class="rv-style-row" style="margin-top:4px">
+            <span class="rv-style-label" style="padding-left:10px;color:var(--muted)">외곽선 두께</span>
+            <input type="range" id="rv-fos-outline-width" class="rv-slider" min="0.5" max="10" step="0.5" value="3">
+            <span id="rv-fos-outline-width-val" class="rv-style-val">3</span>
+            <span class="rv-style-unit">px</span>
           </div>
         </div>
       </div>

@@ -34,13 +34,29 @@ let rvCropLeft    = 0;      // 왼쪽 크롭 px (0 = 자르지 않음)
 
 // 파괴원호 스타일
 let rvSlipStyle = {
-  lineWidth: 2,    // 선 두께 (px)
-  outline:   false, // 외곽선 halo + 점선 모드
-  fosScale:  1.0,  // FOS 글자 크기 배율
+  lineWidth:       2,       // 선 두께 (px)
+  outline:         false,   // 외곽선 halo + 점선 모드
+  fosScale:        1.0,     // FOS 글자 크기 배율
+  fosAlign:        "auto",  // FOS 레이블 위치: "auto" | "left" | "right"
+  slipColor:       "#111111",             // 포락선 색
+  slipHaloColor:   "#ffffff",             // 포락선 외곽선(halo) 색
+  slipHaloWidth:   5,       // 포락선 halo 추가 두께 (px, arc lineWidth 위에 더해짐)
+  fosColor:          "#111111",           // FOS 문자 색
+  fosUnderlineColor: "#111111",           // FOS 밑줄 색
+  fosOutlineColor:   "#ffffff",           // FOS 문자 외곽선 색
+  fosOutlineWidth:   3,     // FOS 문자 외곽선 두께 (px)
+  fosTextOutline:    false, // FOS 문자 외곽선 표시 여부
 };
 
 // 파괴원호 스타일 애니메이션 — 현재 렌더링 중인 보간값
-let rvSlipStyleAnim = { lineWidth: 2, fosScale: 1.0, outlineT: 0.0 };
+let rvSlipStyleAnim = {
+  lineWidth: 2, fosScale: 1.0, outlineT: 0.0,
+  fosAlign: "auto",
+  slipColor: "#111111", slipHaloColor: "#ffffff", slipHaloWidth: 5,
+  fosColor: "#111111", fosUnderlineColor: "#111111",
+  fosOutlineColor: "#ffffff", fosOutlineWidth: 3,
+  fosTextOutline: false,
+};
 let _slipAnimId     = null;
 let rvRenderCache   = null;  // { regionMatMap, surchargeLoads, piezoLines, slip }
 
@@ -774,13 +790,16 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
     const outlineT = slipStyle.outlineT != null ? slipStyle.outlineT
                    : (slipStyle.outline ? 1.0 : 0.0);
 
+    const arcColor  = slipStyle.slipColor     ?? "#111111";
+    const haloColor = slipStyle.slipHaloColor ?? "#ffffff";
+
     // 실선 (outlineT→1 일수록 서서히 사라짐)
     if (outlineT < 0.99) {
       ctx.save();
       ctx.globalAlpha = 1 - outlineT;
       ctx.setLineDash([]);
       ctx.beginPath(); ctx.arc(ccx, ccy, cr, sa, ea, acw);
-      ctx.strokeStyle = "#111111";
+      ctx.strokeStyle = arcColor;
       ctx.lineWidth   = lw;
       ctx.stroke();
       ctx.restore();
@@ -788,14 +807,11 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
 
     // halo 외곽선 + 점선 (outlineT→0 일수록 서서히 사라짐)
     if (outlineT > 0.01) {
-      const haloColor = slipStyle.forExcel
-        ? "rgba(220,220,220,0.92)"
-        : "rgba(255,255,255,0.92)";
       ctx.save();
-      ctx.globalAlpha = outlineT;
+      ctx.globalAlpha = outlineT * 0.92;
       ctx.beginPath(); ctx.arc(ccx, ccy, cr, sa, ea, acw);
       ctx.strokeStyle = haloColor;
-      ctx.lineWidth   = lw + 5;
+      ctx.lineWidth   = lw + (slipStyle.slipHaloWidth ?? 5);
       ctx.setLineDash([]);
       ctx.stroke();
       ctx.restore();
@@ -803,7 +819,7 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
       ctx.save();
       ctx.globalAlpha = outlineT;
       ctx.beginPath(); ctx.arc(ccx, ccy, cr, sa, ea, acw);
-      ctx.strokeStyle = "#111111";
+      ctx.strokeStyle = arcColor;
       ctx.lineWidth   = lw;
       ctx.setLineDash([10, 6]);
       ctx.stroke();
@@ -843,8 +859,12 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
     }
   } else if (intersections.length >= 2) {
     intersections.sort((a, b) => a.x - b.x);
-    const leftAngle  = intersections[0].angle;
-    const rightAngle = intersections[intersections.length - 1].angle;
+    const midX       = (searchLeft + searchRight) / 2;
+    const leftCands  = intersections.filter(i => i.x <  midX);
+    const rightCands = intersections.filter(i => i.x >= midX);
+    // 좌측: 가장 오른쪽(= 해석 영역 마지막 진입) / 우측: 가장 오른쪽(= 최종 진출)
+    const leftAngle  = leftCands.length  > 0 ? leftCands[leftCands.length   - 1].angle : intersections[0].angle;
+    const rightAngle = rightCands.length > 0 ? rightCands[rightCands.length - 1].angle : intersections[intersections.length - 1].angle;
     if (leftAngle > PI2 && rightAngle < PI2) {
       clipAndDraw(leftAngle, rightAngle, true);
     } else {
@@ -857,13 +877,16 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
   const centerVisible = ccx >= 0 && ccx <= W && ccy >= topPx && ccy <= H;
   const fontSize      = Math.min(28, topPx * 0.55) * (slipStyle.fosScale ?? 1.0);
   // 지형 교점 중점 기준으로 해석방향 판별: 교점 있으면 그 중점, 없으면 모델 중점
-  const isRTL = (() => {
-    if (intersections.length >= 2) {
-      const ixMidX = (intersections[0].x + intersections[intersections.length - 1].x) / 2;
-      return ccx > ixMidX;
-    }
-    return ccx > (mLeft + mRight) / 2;
-  })();
+  const fosAlign = slipStyle.fosAlign ?? "auto";
+  const isRTL = fosAlign !== "auto"
+    ? fosAlign === "left"
+    : (() => {
+        if (intersections.length >= 2) {
+          const ixMidX = (intersections[0].x + intersections[intersections.length - 1].x) / 2;
+          return ccx > ixMidX;
+        }
+        return ccx > (mLeft + mRight) / 2;
+      })();
 
   if (centerVisible) {
     // 중심 마커
@@ -876,20 +899,26 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
 
     // FOS 텍스트: LTR → 중심 오른쪽, RTL → 중심 왼쪽
     if (Number.isFinite(fos)) {
-      const fosStr = fos.toFixed(3);
+      const fosStr         = fos.toFixed(3);
+      const fosFill        = slipStyle.fosColor          ?? "#111111";
+      const fosUnderline   = slipStyle.fosUnderlineColor ?? fosFill;
+      const fosStroke      = slipStyle.fosOutlineColor   ?? "#ffffff";
+      const showFosOutline = slipStyle.fosTextOutline    ?? false;
 
       ctx.save();
       ctx.font         = `bold ${fontSize}px 'HakgyoansimBareondotumB', '학교안심 바름돋움B', 'Pretendard', 'Segoe UI', Arial, sans-serif`;
       ctx.textBaseline = "bottom";
       ctx.textAlign    = isRTL ? "right" : "left";
-      ctx.strokeStyle  = "#ffffff";
-      ctx.lineWidth    = 3;
-      ctx.strokeText(fosStr, ccx, ccy + 3);
-      ctx.fillStyle    = "#111111";
+      if (showFosOutline) {
+        ctx.strokeStyle = fosStroke;
+        ctx.lineWidth   = slipStyle.fosOutlineWidth ?? 3;
+        ctx.strokeText(fosStr, ccx, ccy + 3);
+      }
+      ctx.fillStyle = fosFill;
       ctx.fillText(fosStr, ccx, ccy + 3);
 
       const tw = ctx.measureText(fosStr).width;
-      ctx.strokeStyle = "#111111";
+      ctx.strokeStyle = fosUnderline;
       ctx.lineWidth   = 1.5;
       ctx.setLineDash([]);
       ctx.beginPath();
@@ -906,15 +935,19 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
   } else {
     // 중심점이 뷰 밖: X는 중심점 추적(클램프), Y는 topPx 영역 수직 중앙
     if (Number.isFinite(fos)) {
-      const fosStr = fos.toFixed(3);
-      const margin = 40;
-      const textY  = (topPx + fontSize) / 2;
+      const fosStr         = fos.toFixed(3);
+      const margin         = 40;
+      const textY          = (topPx + fontSize) / 2;
+      const fosFill        = slipStyle.fosColor          ?? "#111111";
+      const fosUnderline   = slipStyle.fosUnderlineColor ?? fosFill;
+      const fosStroke      = slipStyle.fosOutlineColor   ?? "#ffffff";
+      const showFosOutline = slipStyle.fosTextOutline    ?? false;
 
       ctx.save();
       ctx.font         = `bold ${fontSize}px 'HakgyoansimBareondotumB', '학교안심 바름돋움B', 'Pretendard', 'Segoe UI', Arial, sans-serif`;
-      ctx.fillStyle    = "#111111";
-      ctx.strokeStyle  = "#ffffff";
-      ctx.lineWidth    = 3;
+      ctx.fillStyle    = fosFill;
+      ctx.strokeStyle  = fosStroke;
+      ctx.lineWidth    = slipStyle.fosOutlineWidth ?? 3;
       ctx.textBaseline = "bottom";
 
       const tw = ctx.measureText(fosStr).width;
@@ -928,10 +961,10 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
         textX = Math.max(margin, Math.min(W - margin - tw, ccx));
         ctx.textAlign = "left";
       }
-      ctx.strokeText(fosStr, textX, textY);
+      if (showFosOutline) ctx.strokeText(fosStr, textX, textY);
       ctx.fillText(fosStr, textX, textY);
 
-      ctx.strokeStyle = "#111111";
+      ctx.strokeStyle = fosUnderline;
       ctx.lineWidth   = 1.5;
       ctx.setLineDash([]);
       ctx.beginPath();
@@ -1181,6 +1214,16 @@ function startSlipAnim() {
     a.lineWidth = lerp(a.lineWidth, t.lineWidth);
     a.fosScale  = lerp(a.fosScale,  t.fosScale);
     a.outlineT  = lerp(a.outlineT,  t.outline ? 1.0 : 0.0);
+    // 비애니메이션 프로퍼티는 즉시 동기화
+    a.fosAlign        = t.fosAlign;
+    a.slipColor       = t.slipColor;
+    a.slipHaloColor   = t.slipHaloColor;
+    a.slipHaloWidth   = t.slipHaloWidth;
+    a.fosColor          = t.fosColor;
+    a.fosUnderlineColor = t.fosUnderlineColor;
+    a.fosOutlineColor   = t.fosOutlineColor;
+    a.fosOutlineWidth   = t.fosOutlineWidth;
+    a.fosTextOutline    = t.fosTextOutline;
     renderCached();
     _slipAnimId = running ? requestAnimationFrame(tick) : null;
   }
@@ -1208,9 +1251,18 @@ async function updateCanvas(idx) {
 
   // 진행 중인 스타일 애니메이션 취소 → 현재 목표값으로 즉시 스냅
   if (_slipAnimId !== null) { cancelAnimationFrame(_slipAnimId); _slipAnimId = null; }
-  rvSlipStyleAnim.lineWidth = rvSlipStyle.lineWidth;
-  rvSlipStyleAnim.fosScale  = rvSlipStyle.fosScale;
-  rvSlipStyleAnim.outlineT  = rvSlipStyle.outline ? 1.0 : 0.0;
+  rvSlipStyleAnim.lineWidth       = rvSlipStyle.lineWidth;
+  rvSlipStyleAnim.fosScale        = rvSlipStyle.fosScale;
+  rvSlipStyleAnim.outlineT        = rvSlipStyle.outline ? 1.0 : 0.0;
+  rvSlipStyleAnim.fosAlign        = rvSlipStyle.fosAlign;
+  rvSlipStyleAnim.slipColor       = rvSlipStyle.slipColor;
+  rvSlipStyleAnim.slipHaloColor   = rvSlipStyle.slipHaloColor;
+  rvSlipStyleAnim.slipHaloWidth   = rvSlipStyle.slipHaloWidth;
+  rvSlipStyleAnim.fosColor          = rvSlipStyle.fosColor;
+  rvSlipStyleAnim.fosUnderlineColor = rvSlipStyle.fosUnderlineColor;
+  rvSlipStyleAnim.fosOutlineColor   = rvSlipStyle.fosOutlineColor;
+  rvSlipStyleAnim.fosOutlineWidth   = rvSlipStyle.fosOutlineWidth;
+  rvSlipStyleAnim.fosTextOutline    = rvSlipStyle.fosTextOutline;
 
   rvRenderCache = { regionMatMap, surchargeLoads, piezoLines, slip, slipEntryExit };
   renderCached();
@@ -1919,6 +1971,69 @@ export function initResultViewer() {
       rvSlipStyle.fosScale = parseFloat(slipFosSlider.value);
       if (slipFosVal) slipFosVal.textContent = parseFloat(slipFosSlider.value).toFixed(1);
       if (rvState.allResults.length) startSlipAnim();
+    });
+  }
+
+  const fosAlignBtns = $("rv-fos-align-btns");
+  if (fosAlignBtns) {
+    fosAlignBtns.addEventListener("click", (e) => {
+      const btn = e.target.closest(".rv-align-btn");
+      if (!btn) return;
+      fosAlignBtns.querySelectorAll(".rv-align-btn").forEach(b => b.classList.remove("rv-align-btn--active"));
+      btn.classList.add("rv-align-btn--active");
+      rvSlipStyle.fosAlign = btn.dataset.align;
+      rvSlipStyleAnim.fosAlign = btn.dataset.align;
+      if (rvState.allResults.length) renderCached();
+    });
+  }
+
+  const fosTextOutlineChk = $("rv-fos-text-outline");
+  if (fosTextOutlineChk) {
+    fosTextOutlineChk.addEventListener("change", () => {
+      rvSlipStyle.fosTextOutline = fosTextOutlineChk.checked;
+      rvSlipStyleAnim.fosTextOutline = fosTextOutlineChk.checked;
+      if (rvState.allResults.length) renderCached();
+    });
+  }
+
+  const colorFields = [
+    ["rv-slip-color",          "slipColor"],
+    ["rv-slip-halo-color",     "slipHaloColor"],
+    ["rv-fos-color",           "fosColor"],
+    ["rv-fos-underline-color", "fosUnderlineColor"],
+    ["rv-fos-outline-color",   "fosOutlineColor"],
+  ];
+  colorFields.forEach(([id, key]) => {
+    const el = $(id);
+    if (!el) return;
+    el.addEventListener("input", () => {
+      rvSlipStyle[key]     = el.value;
+      rvSlipStyleAnim[key] = el.value;
+      if (rvState.allResults.length) renderCached();
+    });
+  });
+
+  const slipHaloWSlider = $("rv-slip-halo-width");
+  const slipHaloWVal    = $("rv-slip-halo-width-val");
+  if (slipHaloWSlider) {
+    slipHaloWSlider.addEventListener("input", () => {
+      const v = parseFloat(slipHaloWSlider.value);
+      rvSlipStyle.slipHaloWidth     = v;
+      rvSlipStyleAnim.slipHaloWidth = v;
+      if (slipHaloWVal) slipHaloWVal.textContent = v;
+      if (rvState.allResults.length) renderCached();
+    });
+  }
+
+  const fosOutlineWSlider = $("rv-fos-outline-width");
+  const fosOutlineWVal    = $("rv-fos-outline-width-val");
+  if (fosOutlineWSlider) {
+    fosOutlineWSlider.addEventListener("input", () => {
+      const v = parseFloat(fosOutlineWSlider.value);
+      rvSlipStyle.fosOutlineWidth     = v;
+      rvSlipStyleAnim.fosOutlineWidth = v;
+      if (fosOutlineWVal) fosOutlineWVal.textContent = v;
+      if (rvState.allResults.length) renderCached();
     });
   }
 

@@ -1665,6 +1665,37 @@ table.data-table td.readonly-cell input {
   height: 4px;
 }
 
+.rv-align-btn {
+  font-size: 0.82em;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.rv-align-btn:hover {
+  border-color: var(--accent);
+}
+.rv-align-btn--active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.rv-color-inp {
+  width: 34px;
+  height: 26px;
+  padding: 1px 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+  flex-shrink: 0;
+}
+
 .rv-canvas-wrap {
   background: var(--canvas-bg);
   border: 1px solid var(--border);
