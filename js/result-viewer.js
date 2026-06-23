@@ -39,6 +39,11 @@ let rvSlipStyle = {
   fosScale:  1.0,  // FOS 글자 크기 배율
 };
 
+// 파괴원호 스타일 애니메이션 — 현재 렌더링 중인 보간값
+let rvSlipStyleAnim = { lineWidth: 2, fosScale: 1.0, outlineT: 0.0 };
+let _slipAnimId     = null;
+let rvRenderCache   = null;  // { regionMatMap, surchargeLoads, piezoLines, slip }
+
 // ─── DOM 헬퍼 ─────────────────────────────────────────────────
 const $  = (id) => document.getElementById(id);
 
@@ -266,6 +271,53 @@ function getPiezoY(sortedPts, x) {
     }
   }
   return sortedPts[sortedPts.length - 1].y;
+}
+
+// ─── SlipEntryExit 파싱 ───────────────────────────────────────
+// 각 해석의 탐색 범위(진입·탈출 x 경계, LeftOption=Point 좌표)를 추출
+function extractSlipEntryExit(doc, analysisName) {
+  if (!doc) return null;
+  let analysisId = null;
+  for (const a of doc.querySelectorAll("Analyses > Analysis")) {
+    if (a.querySelector("Name")?.textContent.trim() === analysisName) {
+      analysisId = a.querySelector("ID")?.textContent.trim() ?? null;
+      break;
+    }
+  }
+  if (!analysisId) return null;
+  let slopeEntry = null;
+  for (const si of doc.querySelectorAll("SlopeItems > SlopeItem")) {
+    if (si.querySelector("AnalysisID")?.textContent.trim() === analysisId) {
+      slopeEntry = si.querySelector("Entry");
+      break;
+    }
+  }
+  if (!slopeEntry) return null;
+  const see = slopeEntry.querySelector("SlipEntryExit");
+  if (!see) return null;
+
+  const ga = (el, attr) => parseFloat(el?.getAttribute(attr) ?? "NaN");
+  const leftLL  = see.querySelector("LeftSideLeftPt");
+  const leftRL  = see.querySelector("LeftSideRightPt");
+  const rightLL = see.querySelector("RightSideLeftPt");
+  const rightRL = see.querySelector("RightSideRightPt");
+
+  const llX = ga(leftLL,  "X"), llY = ga(leftLL,  "Y");
+  const lrX = ga(leftRL,  "X"), lrY = ga(leftRL,  "Y");
+  const rlX = ga(rightLL, "X"), rlY = ga(rightLL, "Y");
+  const rrX = ga(rightRL, "X"), rrY = ga(rightRL, "Y");
+  if (!Number.isFinite(llX) || !Number.isFinite(rrX)) return null;
+
+  return {
+    leftOption:  see.querySelector("LeftOption")?.textContent.trim()  ?? null,
+    rightOption: see.querySelector("RightOption")?.textContent.trim() ?? null,
+    leftX:   Math.min(llX, lrX),
+    rightX:  Math.max(rlX, rrX),
+    leftPtX: (llX + lrX) / 2,
+    leftPtY: (llY + lrY) / 2,
+    rightPtX: (rlX + rrX) / 2,
+    rightPtY: (rlY + rrY) / 2,
+  };
 }
 
 // ─── View Region 렌더 — 동일 물성 인접 리즌 경계 통합 ────────
@@ -602,25 +654,41 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
 
   // 파괴원호 + FOS 텍스트
   if (slip && Number.isFinite(slip.centerX)) {
-    drawSlipCircle(ctx, slip, tf, W, H, topPx, assignedRegions, toC, isDark,
-      { ...(opts.slipStyle ?? {}), forExcel: !!opts.forExcel });
+    drawSlipCircle(ctx, slip, tf, W, H, topPx, regions, toC, isDark,
+      { ...(opts.slipStyle ?? {}), forExcel: !!opts.forExcel },
+      opts.slipEntryExit ?? null);
   }
 
   return tf;
 }
 
 /**
- * 파괴원호: 물성치 할당된 리즌만 클리핑 마스크 사용.
+ * 파괴원호: 전체 리즌(미할당 포함) 기준 지형 클리핑.
  * FOS 텍스트는 상단 topPx 영역.
  */
-function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, slipStyle = {}) {
+function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, slipStyle = {}, entryExit = null) {
   const { centerX: cx, centerY: cy, radius: r, fos } = slip;
   const ccx = tf.offX + (cx - tf.minX) * tf.scale;
   const ccy = tf.offY - (cy - tf.minY) * tf.scale;
   const cr  = r * tf.scale;
 
-  // 지표면 프로파일: 각 X열에서 모든 리즌 경계선의 최소 canvas-Y (= 가장 높은 지점)
-  const groundY = new Float32Array(W).fill(H);
+  // 모델 수평 범위: 전체 리즌 기준 (미할당 리즌도 모델 도메인의 일부)
+  let mLeft = Infinity, mRight = -Infinity;
+  for (const region of allRegions) {
+    for (const pt of region.coords) {
+      const [px] = toC(pt.x, pt.y);
+      if (px < mLeft)  mLeft  = px;
+      if (px > mRight) mRight = px;
+    }
+  }
+  if (!Number.isFinite(mLeft)) { mLeft = 0; mRight = W - 1; }
+  mLeft  = Math.max(0, Math.floor(mLeft));
+  mRight = Math.min(W - 1, Math.ceil(mRight));
+
+  // 지표면 프로파일: 전체 리즌 기준 — 미할당 리즌 사이 공백에서 잘림 방지
+  // groundYReal: 실제 리즌 엣지가 있는 열인지 추적 (false 교점 필터링에 사용)
+  const groundY     = new Float32Array(W).fill(H);
+  const groundYReal = new Uint8Array(W);         // 1 = 실제 리즌 엣지에서 채워진 열
   for (const region of allRegions) {
     const n = region.coords.length;
     for (let i = 0; i < n; i++) {
@@ -631,17 +699,37 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
       const dx   = x2 - x1;
       for (let x = xMin; x <= xMax; x++) {
         const y = Math.abs(dx) < 0.001 ? Math.min(y1, y2) : y1 + (x - x1) / dx * (y2 - y1);
-        if (y < groundY[x]) groundY[x] = y;
+        if (y < groundY[x]) { groundY[x] = y; groundYReal[x] = 1; }
       }
     }
   }
+  // 모델 범위 내 미채움 열만 topPx로 처리, 범위 외부는 H 유지(= 클립 불가 → 미렌더)
   for (let x = 0; x < W; x++) {
-    if (groundY[x] >= H) groundY[x] = topPx;
+    if (groundY[x] >= H) {
+      groundY[x] = (x >= mLeft && x <= mRight) ? topPx : H;
+    }
   }
 
-  // 원과 지표면 교점 탐색 (각 groundY 세그먼트와 원의 교점)
+  // SlipEntryExit 기반 탐색 범위 제한 — 해석 경계 밖의 false 교점 방지
+  let searchLeft  = mLeft;
+  let searchRight = mRight;
+  let leftAngleOverride = null;   // LeftOption=Point: 진입점 좌표로 직접 계산
+
+  if (entryExit) {
+    const [cxL] = toC(entryExit.leftX,  0);
+    const [cxR] = toC(entryExit.rightX, 0);
+    searchLeft  = Math.max(mLeft,  Math.floor(cxL) - 1);
+    searchRight = Math.min(mRight, Math.ceil(cxR)  + 1);
+    if (entryExit.leftOption === "Point") {
+      const [epx, epy] = toC(entryExit.leftPtX, entryExit.leftPtY);
+      leftAngleOverride = Math.atan2(epy - ccy, epx - ccx);
+    }
+  }
+
+  // 원과 지표면 교점 탐색 — searchLeft~searchRight 내 실제 리즌 엣지에서만
   const intersections = [];
-  for (let x = 0; x < W - 1; x++) {
+  for (let x = searchLeft; x < Math.min(searchRight, W - 1); x++) {
+    if (!groundYReal[x] || !groundYReal[x + 1]) continue;
     const gx1 = x,     gy1 = groundY[x];
     const gx2 = x + 1, gy2 = groundY[x + 1];
     const ddx = gx2 - gx1;
@@ -664,78 +752,101 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
   }
 
   const strokeArc = (sa, ea, acw) => {
-    const lw        = slipStyle.lineWidth ?? 2;
-    const outline   = slipStyle.outline   ?? false;
-    const haloColor = slipStyle.forExcel
-      ? "rgba(220,220,220,0.95)"   // Excel 흰 배경 → 연회색 halo
-      : "rgba(255,255,255,0.92)";  // 웹 → 흰색 halo
-    if (outline) {
-      // 1패스: halo 외곽선 (실선)
+    const lw       = slipStyle.lineWidth ?? 2;
+    // outlineT: 0=완전 실선, 1=완전 외곽+점선. 애니메이션 중 0~1 사이 보간값
+    const outlineT = slipStyle.outlineT != null ? slipStyle.outlineT
+                   : (slipStyle.outline ? 1.0 : 0.0);
+
+    // 실선 (outlineT→1 일수록 서서히 사라짐)
+    if (outlineT < 0.99) {
       ctx.save();
-      ctx.beginPath();
-      ctx.arc(ccx, ccy, cr, sa, ea, acw);
+      ctx.globalAlpha = 1 - outlineT;
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(ccx, ccy, cr, sa, ea, acw);
+      ctx.strokeStyle = "#111111";
+      ctx.lineWidth   = lw;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // halo 외곽선 + 점선 (outlineT→0 일수록 서서히 사라짐)
+    if (outlineT > 0.01) {
+      const haloColor = slipStyle.forExcel
+        ? "rgba(220,220,220,0.92)"
+        : "rgba(255,255,255,0.92)";
+      ctx.save();
+      ctx.globalAlpha = outlineT;
+      ctx.beginPath(); ctx.arc(ccx, ccy, cr, sa, ea, acw);
       ctx.strokeStyle = haloColor;
       ctx.lineWidth   = lw + 5;
       ctx.setLineDash([]);
       ctx.stroke();
       ctx.restore();
-      // 2패스: 메인색 점선
+
       ctx.save();
-      ctx.beginPath();
-      ctx.arc(ccx, ccy, cr, sa, ea, acw);
+      ctx.globalAlpha = outlineT;
+      ctx.beginPath(); ctx.arc(ccx, ccy, cr, sa, ea, acw);
       ctx.strokeStyle = "#111111";
       ctx.lineWidth   = lw;
       ctx.setLineDash([10, 6]);
       ctx.stroke();
       ctx.restore();
-    } else {
-      ctx.save();
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.arc(ccx, ccy, cr, sa, ea, acw);
-      ctx.strokeStyle = "#111111";
-      ctx.lineWidth   = lw;
-      ctx.stroke();
-      ctx.restore();
     }
   };
 
-  if (intersections.length >= 2) {
+  // 클립 경로: searchLeft~searchRight, 지표선 아래 + 하단으로 닫음
+  const clipAndDraw = (sa, ea, acw) => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(searchLeft, groundY[searchLeft]);
+    for (let x = searchLeft + 1; x <= searchRight; x++) ctx.lineTo(x, groundY[x]);
+    ctx.lineTo(searchRight, H); ctx.lineTo(searchLeft, H);
+    ctx.closePath();
+    ctx.clip();
+    strokeArc(sa, ea, acw);
+    ctx.restore();
+  };
+
+  const PI2 = Math.PI / 2;
+
+  if (leftAngleOverride !== null) {
+    // LeftOption=Point: 왼쪽 각도 = 진입 고정점 방향, 오른쪽 = 교점 탐색
+    const midX = (searchLeft + searchRight) / 2;
+    const rightCands = intersections.filter(i => i.x >= midX);
+    rightCands.sort((a, b) => a.x - b.x);
+    const rightAngle = rightCands.length > 0
+      ? rightCands[rightCands.length - 1].angle
+      : (intersections.length > 0
+          ? [...intersections].sort((a, b) => b.x - a.x)[0].angle
+          : null);
+    if (rightAngle !== null && leftAngleOverride > PI2 && rightAngle < PI2) {
+      clipAndDraw(leftAngleOverride, rightAngle, true);
+    } else {
+      clipAndDraw(0, 2 * Math.PI, false);
+    }
+  } else if (intersections.length >= 2) {
     intersections.sort((a, b) => a.x - b.x);
     const leftAngle  = intersections[0].angle;
     const rightAngle = intersections[intersections.length - 1].angle;
-    // 캔버스 Y↓ 기준: π/2 = 아래 방향. 왼쪽 교점 각도 > π/2 > 오른쪽 교점 각도 이면
-    // anticlockwise=true(각도 감소 방향)로 π/2를 통과 → 지반 아래 구간 호가 됨.
-    const PI2 = Math.PI / 2;
     if (leftAngle > PI2 && rightAngle < PI2) {
-      strokeArc(leftAngle, rightAngle, true);
+      clipAndDraw(leftAngle, rightAngle, true);
     } else {
-      // 비표준 케이스: 클리핑 폴백
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(0, groundY[0]);
-      for (let x = 1; x < W; x++) ctx.lineTo(x, groundY[x]);
-      ctx.lineTo(W, H); ctx.lineTo(0, H);
-      ctx.closePath();
-      ctx.clip();
-      strokeArc(0, 2 * Math.PI, false);
-      ctx.restore();
+      clipAndDraw(0, 2 * Math.PI, false);
     }
   } else {
-    // 교점 없음: 클리핑 폴백
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(0, groundY[0]);
-    for (let x = 1; x < W; x++) ctx.lineTo(x, groundY[x]);
-    ctx.lineTo(W, H); ctx.lineTo(0, H);
-    ctx.closePath();
-    ctx.clip();
-    strokeArc(0, 2 * Math.PI, false);
-    ctx.restore();
+    clipAndDraw(0, 2 * Math.PI, false);
   }
 
   const centerVisible = ccx >= 0 && ccx <= W && ccy >= topPx && ccy <= H;
   const fontSize      = Math.min(28, topPx * 0.55) * (slipStyle.fosScale ?? 1.0);
+  // 지형 교점 중점 기준으로 해석방향 판별: 교점 있으면 그 중점, 없으면 모델 중점
+  const isRTL = (() => {
+    if (intersections.length >= 2) {
+      const ixMidX = (intersections[0].x + intersections[intersections.length - 1].x) / 2;
+      return ccx > ixMidX;
+    }
+    return ccx > (mLeft + mRight) / 2;
+  })();
 
   if (centerVisible) {
     // 중심 마커
@@ -746,14 +857,14 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
     ctx.fill();
     ctx.restore();
 
-    // FOS 텍스트: 밑줄 왼쪽 시작점이 중심점 X, 텍스트는 오른쪽으로 표시
+    // FOS 텍스트: LTR → 중심 오른쪽, RTL → 중심 왼쪽
     if (Number.isFinite(fos)) {
       const fosStr = fos.toFixed(3);
 
       ctx.save();
-      ctx.font         = `bold ${fontSize}px 'Pretendard', 'Segoe UI', Arial, sans-serif`;
+      ctx.font         = `bold ${fontSize}px 'HakgyoansimBareondotumB', '학교안심 바름돋움B', 'Pretendard', 'Segoe UI', Arial, sans-serif`;
       ctx.textBaseline = "bottom";
-      ctx.textAlign    = "left";
+      ctx.textAlign    = isRTL ? "right" : "left";
       ctx.strokeStyle  = "#ffffff";
       ctx.lineWidth    = 3;
       ctx.strokeText(fosStr, ccx, ccy + 3);
@@ -765,8 +876,13 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
       ctx.lineWidth   = 1.5;
       ctx.setLineDash([]);
       ctx.beginPath();
-      ctx.moveTo(ccx,      ccy + 3);
-      ctx.lineTo(ccx + tw, ccy + 3);
+      if (isRTL) {
+        ctx.moveTo(ccx - tw, ccy + 3);
+        ctx.lineTo(ccx,      ccy + 3);
+      } else {
+        ctx.moveTo(ccx,      ccy + 3);
+        ctx.lineTo(ccx + tw, ccy + 3);
+      }
       ctx.stroke();
       ctx.restore();
     }
@@ -775,26 +891,40 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
     if (Number.isFinite(fos)) {
       const fosStr = fos.toFixed(3);
       const margin = 40;
-      const textX  = Math.max(margin, Math.min(W - margin, ccx));
-      const textY  = (topPx + fontSize) / 2;  // textBaseline=bottom 기준 여백 수직 중앙
+      const textY  = (topPx + fontSize) / 2;
 
       ctx.save();
-      ctx.font         = `bold ${fontSize}px 'Pretendard', 'Segoe UI', Arial, sans-serif`;
+      ctx.font         = `bold ${fontSize}px 'HakgyoansimBareondotumB', '학교안심 바름돋움B', 'Pretendard', 'Segoe UI', Arial, sans-serif`;
       ctx.fillStyle    = "#111111";
       ctx.strokeStyle  = "#ffffff";
       ctx.lineWidth    = 3;
-      ctx.textAlign    = "left";
       ctx.textBaseline = "bottom";
+
+      const tw = ctx.measureText(fosStr).width;
+      let textX;
+      if (isRTL) {
+        // 앵커가 오른쪽 끝 — 텍스트가 왼쪽으로 뻗으므로 오른쪽 여백 기준 클램프
+        textX = Math.max(margin + tw, Math.min(W - margin, ccx));
+        ctx.textAlign = "right";
+      } else {
+        // 앵커가 왼쪽 끝 — 텍스트가 오른쪽으로 뻗으므로 왼쪽 여백 기준 클램프
+        textX = Math.max(margin, Math.min(W - margin - tw, ccx));
+        ctx.textAlign = "left";
+      }
       ctx.strokeText(fosStr, textX, textY);
       ctx.fillText(fosStr, textX, textY);
 
-      const tw = ctx.measureText(fosStr).width;
       ctx.strokeStyle = "#111111";
       ctx.lineWidth   = 1.5;
       ctx.setLineDash([]);
       ctx.beginPath();
-      ctx.moveTo(textX,      textY);
-      ctx.lineTo(textX + tw, textY);
+      if (isRTL) {
+        ctx.moveTo(textX - tw, textY);
+        ctx.lineTo(textX,      textY);
+      } else {
+        ctx.moveTo(textX,      textY);
+        ctx.lineTo(textX + tw, textY);
+      }
       ctx.stroke();
       ctx.restore();
     }
@@ -1004,6 +1134,42 @@ function getUserRepresentative() {
   };
 }
 
+// ─── 파괴원호 스타일 애니메이션 헬퍼 ─────────────────────────
+function renderCached() {
+  const canvas = $("rv-canvas");
+  if (!canvas || !rvRenderCache) return;
+  const { regionMatMap, surchargeLoads, piezoLines, slip, slipEntryExit } = rvRenderCache;
+  const wrapEl   = canvas.closest(".rv-canvas-wrap");
+  const naturalW = (wrapEl ? wrapEl.clientWidth : 0) || 700;
+  const hasCrop  = (rvFixedWidth && rvFixedWidth > 0) || rvCropLeft > 0;
+  canvas.style.width = hasCrop ? naturalW + "px" : "";
+  renderResultCanvas(canvas, rvState.regions, rvState.materials, regionMatMap, slip, surchargeLoads, piezoLines,
+    { viewRegion: rvViewRegion, fixedHeight: rvFixedHeight, slipStyle: rvSlipStyleAnim, slipEntryExit });
+  updateResizeOverlay();
+}
+
+function startSlipAnim() {
+  if (_slipAnimId !== null) cancelAnimationFrame(_slipAnimId);
+  const SPEED = 0.14;
+  function tick() {
+    const t = rvSlipStyle;
+    const a = rvSlipStyleAnim;
+    let running = false;
+    const lerp = (cur, tgt) => {
+      const d = tgt - cur;
+      if (Math.abs(d) < 0.002) return tgt;
+      running = true;
+      return cur + d * SPEED;
+    };
+    a.lineWidth = lerp(a.lineWidth, t.lineWidth);
+    a.fosScale  = lerp(a.fosScale,  t.fosScale);
+    a.outlineT  = lerp(a.outlineT,  t.outline ? 1.0 : 0.0);
+    renderCached();
+    _slipAnimId = running ? requestAnimationFrame(tick) : null;
+  }
+  _slipAnimId = requestAnimationFrame(tick);
+}
+
 // ─── 캔버스 업데이트 ──────────────────────────────────────────
 async function updateCanvas(idx) {
   if (!rvState.allResults.length) return;
@@ -1018,19 +1184,19 @@ async function updateCanvas(idx) {
   const regionMatMap   = extractRegionMaterials(rvState.doc, result.analysisName);
   const surchargeLoads = extractSurchargeLoads(rvState.doc, result.analysisName);
   const piezoLines     = extractPiezometricLines(rvState.doc, result.analysisName);
+  const slipEntryExit  = extractSlipEntryExit(rvState.doc, result.analysisName);
   const slip = Number.isFinite(result.centerX)
     ? { centerX: result.centerX, centerY: result.centerY, radius: result.radius, fos: result.fos }
     : null;
 
-  // 크롭 모드: canvas는 naturalW 전체 렌더 → 그림자 div가 잘린 영역 덮음 (비율 변화 없음)
-  const wrapEl = canvas.closest(".rv-canvas-wrap");
-  const naturalW = (wrapEl ? wrapEl.clientWidth : 0) || 700;
-  const hasCrop = (rvFixedWidth && rvFixedWidth > 0) || rvCropLeft > 0;
-  canvas.style.width = hasCrop ? naturalW + "px" : "";
+  // 진행 중인 스타일 애니메이션 취소 → 현재 목표값으로 즉시 스냅
+  if (_slipAnimId !== null) { cancelAnimationFrame(_slipAnimId); _slipAnimId = null; }
+  rvSlipStyleAnim.lineWidth = rvSlipStyle.lineWidth;
+  rvSlipStyleAnim.fosScale  = rvSlipStyle.fosScale;
+  rvSlipStyleAnim.outlineT  = rvSlipStyle.outline ? 1.0 : 0.0;
 
-  renderResultCanvas(canvas, rvState.regions, rvState.materials, regionMatMap, slip, surchargeLoads, piezoLines,
-    { viewRegion: rvViewRegion, fixedHeight: rvFixedHeight, slipStyle: rvSlipStyle });
-  updateResizeOverlay();
+  rvRenderCache = { regionMatMap, surchargeLoads, piezoLines, slip, slipEntryExit };
+  renderCached();
   updateInfoPanel(result);
 }
 
@@ -1441,11 +1607,12 @@ async function handleExcelDownload() {
       const rmap           = extractRegionMaterials(rvState.doc, caseResult.analysisName);
       const surchargeLoads = extractSurchargeLoads(rvState.doc, caseResult.analysisName);
       const piezoLines     = extractPiezometricLines(rvState.doc, caseResult.analysisName);
+      const slipEntryExit  = extractSlipEntryExit(rvState.doc, caseResult.analysisName);
       const slip = Number.isFinite(caseResult.centerX)
         ? { centerX: caseResult.centerX, centerY: caseResult.centerY, radius: caseResult.radius, fos: caseResult.fos }
         : null;
       renderResultCanvas(offCanvas, rvState.regions, rvState.materials, rmap, slip, surchargeLoads, piezoLines,
-        { forExcel: true, width: excelRenderW, viewRegion: rvViewRegion, fixedHeight: excelFixedH, slipStyle: rvSlipStyle });
+        { forExcel: true, width: excelRenderW, viewRegion: rvViewRegion, fixedHeight: excelFixedH, slipStyle: rvSlipStyle, slipEntryExit });
       if (!hasCropW) return offCanvas.toDataURL("image/png");
       // 가시 영역만 크롭하여 CANVAS_W × excelH 크기로 출력
       const excelH  = offCanvas.height;
@@ -1721,20 +1888,20 @@ export function initResultViewer() {
     slipLwSlider.addEventListener("input", () => {
       rvSlipStyle.lineWidth = parseFloat(slipLwSlider.value);
       if (slipLwVal) slipLwVal.textContent = slipLwSlider.value;
-      if (rvState.allResults.length) updateCanvas(rvState.selectedIdx);
+      if (rvState.allResults.length) startSlipAnim();
     });
   }
   if (slipOutline) {
     slipOutline.addEventListener("change", () => {
       rvSlipStyle.outline = slipOutline.checked;
-      if (rvState.allResults.length) updateCanvas(rvState.selectedIdx);
+      if (rvState.allResults.length) startSlipAnim();
     });
   }
   if (slipFosSlider) {
     slipFosSlider.addEventListener("input", () => {
       rvSlipStyle.fosScale = parseFloat(slipFosSlider.value);
       if (slipFosVal) slipFosVal.textContent = parseFloat(slipFosSlider.value).toFixed(1);
-      if (rvState.allResults.length) updateCanvas(rvState.selectedIdx);
+      if (rvState.allResults.length) startSlipAnim();
     });
   }
 
