@@ -1524,35 +1524,56 @@ function updateInfoPanel(result) {
 }
 
 // ─── PNG 다운로드 ─────────────────────────────────────────────
+// 흰 배경 + 너비 크롭(rvCropLeft/rvFixedWidth) 적용된 캔버스를 반환
+function renderCroppedCanvas() {
+  if (!rvRenderCache) return null;
+  const srcCanvas = $("rv-canvas");
+  if (!srcCanvas) return null;
+
+  const { regionMatMap, surchargeLoads, piezoLines, slip, slipEntryExit } = rvRenderCache;
+  const nativeW   = srcCanvas.width;
+  const pixelVisL = rvCropLeft;
+  const pixelVisR = (rvFixedWidth && rvFixedWidth > 0) ? Math.min(rvFixedWidth, nativeW) : nativeW;
+  const pixelVisW = Math.max(1, pixelVisR - pixelVisL);
+  const hasCropW  = rvCropLeft > 0 || (rvFixedWidth && rvFixedWidth > 0 && rvFixedWidth < nativeW);
+
+  const offCanvas = document.createElement("canvas");
+  renderResultCanvas(offCanvas, rvState.regions, rvState.materials, regionMatMap, slip,
+    surchargeLoads, piezoLines,
+    { forExcel: true, width: nativeW, viewRegion: rvViewRegion,
+      fixedHeight: rvFixedHeight, slipStyle: rvSlipStyle, slipEntryExit });
+
+  if (!hasCropW) return offCanvas;
+
+  const outCvs = document.createElement("canvas");
+  outCvs.width  = pixelVisW;
+  outCvs.height = offCanvas.height;
+  outCvs.getContext("2d").drawImage(offCanvas, pixelVisL, 0, pixelVisW, offCanvas.height, 0, 0, pixelVisW, offCanvas.height);
+  return outCvs;
+}
+
 function downloadCanvasImage() {
-  const canvas = $("rv-canvas");
-  if (!canvas) return;
+  if (!rvRenderCache) return;
+  const out = renderCroppedCanvas();
+  if (!out) return;
   const result = rvState.allResults[rvState.selectedIdx];
   const name   = result ? result.analysisName.replace(/[/\\:*?"<>|]/g, "_") : "result";
   const a = document.createElement("a");
   a.download = `${name}.png`;
-  a.href = canvas.toDataURL("image/png");
+  a.href = out.toDataURL("image/png");
   a.click();
 }
 
 async function copyCanvasToClipboard() {
   if (!rvRenderCache) return;
-  const srcCanvas = $("rv-canvas");
-  if (!srcCanvas) return;
-
   const btn = $("rv-copy-btn");
   const origText = btn?.textContent ?? "";
 
   try {
-    // 흰 배경으로 오프스크린 렌더링 (현재 캔버스와 동일 크기)
-    const offCanvas = document.createElement("canvas");
-    const { regionMatMap, surchargeLoads, piezoLines, slip, slipEntryExit } = rvRenderCache;
-    renderResultCanvas(offCanvas, rvState.regions, rvState.materials, regionMatMap, slip,
-      surchargeLoads, piezoLines,
-      { forExcel: true, width: srcCanvas.width, viewRegion: rvViewRegion,
-        fixedHeight: rvFixedHeight, slipStyle: rvSlipStyle, slipEntryExit });
+    const out = renderCroppedCanvas();
+    if (!out) throw new Error("캔버스 렌더링 실패");
 
-    const blob = await new Promise((resolve) => offCanvas.toBlob(resolve, "image/png"));
+    const blob = await new Promise((resolve) => out.toBlob(resolve, "image/png"));
     if (!blob) throw new Error("blob 생성 실패");
 
     await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
