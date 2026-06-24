@@ -313,6 +313,7 @@ export async function generateStructuralReport(options) {
   // 페이지 설정: 페이지 나누기 미리보기 + 눈금선 숨김
   ws.views = [{ state: "pageBreakPreview", showGridLines: false }];
   // 가로 1페이지에 맞춤 (세로는 제한 없음)
+  ws.pageSetup.paperSize   = 9; // A4
   ws.pageSetup.fitToPage   = true;
   ws.pageSetup.fitToWidth  = 1;
   ws.pageSetup.fitToHeight = 0;
@@ -445,11 +446,13 @@ async function generateEccentricSheet(wb, opts) {
   for (let c = 1; c <= COL.AI + 2; c++) ws.getColumn(c).width = COL_W;
   for (let c = COL_AM; c <= COL_AW; c++) ws.getColumn(c).width = 6.125;
 
-  // 행 높이: 전체 18pt 통일
+  // 행 높이: 전체 18pt 통일, 19~34행은 23pt
   for (let r = 1; r <= 97; r++) ws.getRow(r).height = 18;
+  for (let r = 19; r <= 34; r++) ws.getRow(r).height = 23;
 
   // 페이지 설정
   ws.views = [{ state: "pageBreakPreview", showGridLines: false }];
+  ws.pageSetup.paperSize   = 9; // A4
   ws.pageSetup.fitToPage  = true;
   ws.pageSetup.fitToWidth = 1;
   ws.pageSetup.fitToHeight = 0;

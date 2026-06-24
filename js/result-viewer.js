@@ -669,13 +669,198 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
   drawSurchargeLoads(ctx, surchargeLoads, toC, topPx, H, isDark, gMinX, gMaxX);
 
   // 파괴원호 + FOS 텍스트
-  if (slip && Number.isFinite(slip.centerX)) {
-    drawSlipCircle(ctx, slip, tf, W, H, topPx, regions, toC, isDark,
-      { ...(opts.slipStyle ?? {}), forExcel: !!opts.forExcel },
-      opts.slipEntryExit ?? null);
+  if (slip && (slip.profile?.length >= 2 || Number.isFinite(slip.centerX))) {
+    if (slip.profile?.length >= 2) {
+      drawSlipProfile(ctx, slip, tf, W, H, topPx, slip.profile, toC, isDark,
+        { ...(opts.slipStyle ?? {}), forExcel: !!opts.forExcel });
+    } else {
+      drawSlipCircle(ctx, slip, tf, W, H, topPx, regions, toC, isDark,
+        { ...(opts.slipStyle ?? {}), forExcel: !!opts.forExcel },
+        opts.slipEntryExit ?? null);
+    }
   }
 
   return tf;
+}
+
+/** parseAllResults 항목 → 캔버스 slip 객체 */
+function buildSlipPayload(result) {
+  const hasProfile = Array.isArray(result.profile) && result.profile.length >= 2;
+  const hasCenter  = Number.isFinite(result.centerX);
+  if (!hasProfile && !hasCenter) return null;
+  return {
+    centerX: result.centerX,
+    centerY: result.centerY,
+    radius:  result.radius,
+    fos:     result.fos,
+    profile: hasProfile ? result.profile : null,
+  };
+}
+
+/**
+ * FOS 텍스트 + 슬립 중심 마커 (drawSlipCircle / drawSlipProfile 공통).
+ */
+function drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyle }) {
+  const centerVisible = ccx >= 0 && ccx <= W && ccy >= topPx && ccy <= H;
+  const fontSize      = Math.min(28, topPx * 0.55) * (slipStyle.fosScale ?? 1.0);
+
+  if (centerVisible) {
+    ctx.save();
+    ctx.fillStyle = "#111111";
+    ctx.beginPath();
+    ctx.arc(ccx, ccy, 3, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.restore();
+
+    if (Number.isFinite(fos)) {
+      const fosStr         = fos.toFixed(3);
+      const fosFill        = slipStyle.fosColor          ?? "#111111";
+      const fosUnderline   = slipStyle.fosUnderlineColor ?? fosFill;
+      const fosStroke      = slipStyle.fosOutlineColor   ?? "#ffffff";
+      const showFosOutline = slipStyle.fosTextOutline    ?? false;
+
+      ctx.save();
+      ctx.font         = `bold ${fontSize}px 'HakgyoansimBareondotumB', '학교안심 바름돋움B', 'Pretendard', 'Segoe UI', Arial, sans-serif`;
+      ctx.textBaseline = "bottom";
+      ctx.textAlign    = isRTL ? "right" : "left";
+      if (showFosOutline) {
+        ctx.strokeStyle = fosStroke;
+        ctx.lineWidth   = slipStyle.fosOutlineWidth ?? 3;
+        ctx.strokeText(fosStr, ccx, ccy + 3);
+      }
+      ctx.fillStyle = fosFill;
+      ctx.fillText(fosStr, ccx, ccy + 3);
+
+      const tw = ctx.measureText(fosStr).width;
+      ctx.strokeStyle = fosUnderline;
+      ctx.lineWidth   = 1.5;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      if (isRTL) {
+        ctx.moveTo(ccx - tw, ccy + 3);
+        ctx.lineTo(ccx,      ccy + 3);
+      } else {
+        ctx.moveTo(ccx,      ccy + 3);
+        ctx.lineTo(ccx + tw, ccy + 3);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    return;
+  }
+
+  if (Number.isFinite(fos)) {
+    const fosStr         = fos.toFixed(3);
+    const margin         = 40;
+    const textY          = (topPx + fontSize) / 2;
+    const fosFill        = slipStyle.fosColor          ?? "#111111";
+    const fosUnderline   = slipStyle.fosUnderlineColor ?? fosFill;
+    const fosStroke      = slipStyle.fosOutlineColor   ?? "#ffffff";
+    const showFosOutline = slipStyle.fosTextOutline    ?? false;
+
+    ctx.save();
+    ctx.font         = `bold ${fontSize}px 'HakgyoansimBareondotumB', '학교안심 바름돋움B', 'Pretendard', 'Segoe UI', Arial, sans-serif`;
+    ctx.fillStyle    = fosFill;
+    ctx.strokeStyle  = fosStroke;
+    ctx.lineWidth    = slipStyle.fosOutlineWidth ?? 3;
+    ctx.textBaseline = "bottom";
+
+    const tw = ctx.measureText(fosStr).width;
+    let textX;
+    if (isRTL) {
+      textX = Math.max(margin + tw, Math.min(W - margin, ccx));
+      ctx.textAlign = "right";
+    } else {
+      textX = Math.max(margin, Math.min(W - margin - tw, ccx));
+      ctx.textAlign = "left";
+    }
+    if (showFosOutline) ctx.strokeText(fosStr, textX, textY);
+    ctx.fillText(fosStr, textX, textY);
+
+    ctx.strokeStyle = fosUnderline;
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    if (isRTL) {
+      ctx.moveTo(textX - tw, textY);
+      ctx.lineTo(textX,      textY);
+    } else {
+      ctx.moveTo(textX,      textY);
+      ctx.lineTo(textX + tw, textY);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/**
+ * GeoStudio slice_{slipId}.csv 프로파일로 파괴포락선을 그린다.
+ * GSZ 해석결과와 동일한 좌표열을 사용한다.
+ */
+function drawSlipProfile(ctx, slip, tf, W, H, topPx, profile, toC, _isDark, slipStyle = {}) {
+  const canvasPts = profile.map((p) => toC(p.x, p.y));
+  if (canvasPts.length < 2) return;
+
+  const { centerX: cx, centerY: cy, fos } = slip;
+  const hasCenter = Number.isFinite(cx) && Number.isFinite(cy);
+  const midIdx    = Math.floor(canvasPts.length / 2);
+  const ccx = hasCenter
+    ? tf.offX + (cx - tf.minX) * tf.scale
+    : canvasPts[midIdx][0];
+  const ccy = hasCenter
+    ? tf.offY - (cy - tf.minY) * tf.scale
+    : canvasPts[midIdx][1];
+
+  const fosAlign = slipStyle.fosAlign ?? "auto";
+  const profileMidX = canvasPts[midIdx][0];
+  const isRTL = fosAlign !== "auto"
+    ? fosAlign === "left"
+    : ccx > profileMidX;
+
+  const lw       = slipStyle.lineWidth ?? 2;
+  const outlineT = slipStyle.outlineT != null ? slipStyle.outlineT
+                 : (slipStyle.outline ? 1.0 : 0.0);
+  const arcColor  = slipStyle.slipColor     ?? "#111111";
+  const haloColor = slipStyle.slipHaloColor ?? "#ffffff";
+
+  const strokePath = () => {
+    ctx.beginPath();
+    ctx.moveTo(canvasPts[0][0], canvasPts[0][1]);
+    for (let i = 1; i < canvasPts.length; i++) {
+      ctx.lineTo(canvasPts[i][0], canvasPts[i][1]);
+    }
+    ctx.stroke();
+  };
+
+  if (outlineT < 0.99) {
+    ctx.save();
+    ctx.globalAlpha = 1 - outlineT;
+    ctx.setLineDash([]);
+    ctx.strokeStyle = arcColor;
+    ctx.lineWidth   = lw;
+    strokePath();
+    ctx.restore();
+  }
+
+  if (outlineT > 0.01) {
+    ctx.save();
+    ctx.globalAlpha = outlineT * 0.92;
+    ctx.setLineDash([]);
+    ctx.strokeStyle = haloColor;
+    ctx.lineWidth   = lw + (slipStyle.slipHaloWidth ?? 5);
+    strokePath();
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = outlineT;
+    ctx.setLineDash([10, 6]);
+    ctx.strokeStyle = arcColor;
+    ctx.lineWidth   = lw;
+    strokePath();
+    ctx.restore();
+  }
+
+  drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyle });
 }
 
 /**
@@ -827,13 +1012,14 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
     }
   };
 
-  // 클립 경로: searchLeft~searchRight, 지표선 아래 + 하단으로 닫음
+  // 클립 경로: 항상 mLeft~mRight 전체 지형 기준 — searchLeft/Right는 교점 탐색용 제한이므로
+  // 클립에 쓰면 searchLeft가 리즌 경계 밖 1px(groundY=topPx)일 때 하늘 영역이 노출됨
   const clipAndDraw = (sa, ea, acw) => {
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(searchLeft, groundY[searchLeft]);
-    for (let x = searchLeft + 1; x <= searchRight; x++) ctx.lineTo(x, groundY[x]);
-    ctx.lineTo(searchRight, H); ctx.lineTo(searchLeft, H);
+    ctx.moveTo(mLeft, groundY[mLeft]);
+    for (let x = mLeft + 1; x <= mRight; x++) ctx.lineTo(x, groundY[x]);
+    ctx.lineTo(mRight, H); ctx.lineTo(mLeft, H);
     ctx.closePath();
     ctx.clip();
     strokeArc(sa, ea, acw);
@@ -874,9 +1060,6 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
     clipAndDraw(0, 2 * Math.PI, false);
   }
 
-  const centerVisible = ccx >= 0 && ccx <= W && ccy >= topPx && ccy <= H;
-  const fontSize      = Math.min(28, topPx * 0.55) * (slipStyle.fosScale ?? 1.0);
-  // 지형 교점 중점 기준으로 해석방향 판별: 교점 있으면 그 중점, 없으면 모델 중점
   const fosAlign = slipStyle.fosAlign ?? "auto";
   const isRTL = fosAlign !== "auto"
     ? fosAlign === "left"
@@ -888,97 +1071,7 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
         return ccx > (mLeft + mRight) / 2;
       })();
 
-  if (centerVisible) {
-    // 중심 마커
-    ctx.save();
-    ctx.fillStyle = "#111111";
-    ctx.beginPath();
-    ctx.arc(ccx, ccy, 3, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.restore();
-
-    // FOS 텍스트: LTR → 중심 오른쪽, RTL → 중심 왼쪽
-    if (Number.isFinite(fos)) {
-      const fosStr         = fos.toFixed(3);
-      const fosFill        = slipStyle.fosColor          ?? "#111111";
-      const fosUnderline   = slipStyle.fosUnderlineColor ?? fosFill;
-      const fosStroke      = slipStyle.fosOutlineColor   ?? "#ffffff";
-      const showFosOutline = slipStyle.fosTextOutline    ?? false;
-
-      ctx.save();
-      ctx.font         = `bold ${fontSize}px 'HakgyoansimBareondotumB', '학교안심 바름돋움B', 'Pretendard', 'Segoe UI', Arial, sans-serif`;
-      ctx.textBaseline = "bottom";
-      ctx.textAlign    = isRTL ? "right" : "left";
-      if (showFosOutline) {
-        ctx.strokeStyle = fosStroke;
-        ctx.lineWidth   = slipStyle.fosOutlineWidth ?? 3;
-        ctx.strokeText(fosStr, ccx, ccy + 3);
-      }
-      ctx.fillStyle = fosFill;
-      ctx.fillText(fosStr, ccx, ccy + 3);
-
-      const tw = ctx.measureText(fosStr).width;
-      ctx.strokeStyle = fosUnderline;
-      ctx.lineWidth   = 1.5;
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      if (isRTL) {
-        ctx.moveTo(ccx - tw, ccy + 3);
-        ctx.lineTo(ccx,      ccy + 3);
-      } else {
-        ctx.moveTo(ccx,      ccy + 3);
-        ctx.lineTo(ccx + tw, ccy + 3);
-      }
-      ctx.stroke();
-      ctx.restore();
-    }
-  } else {
-    // 중심점이 뷰 밖: X는 중심점 추적(클램프), Y는 topPx 영역 수직 중앙
-    if (Number.isFinite(fos)) {
-      const fosStr         = fos.toFixed(3);
-      const margin         = 40;
-      const textY          = (topPx + fontSize) / 2;
-      const fosFill        = slipStyle.fosColor          ?? "#111111";
-      const fosUnderline   = slipStyle.fosUnderlineColor ?? fosFill;
-      const fosStroke      = slipStyle.fosOutlineColor   ?? "#ffffff";
-      const showFosOutline = slipStyle.fosTextOutline    ?? false;
-
-      ctx.save();
-      ctx.font         = `bold ${fontSize}px 'HakgyoansimBareondotumB', '학교안심 바름돋움B', 'Pretendard', 'Segoe UI', Arial, sans-serif`;
-      ctx.fillStyle    = fosFill;
-      ctx.strokeStyle  = fosStroke;
-      ctx.lineWidth    = slipStyle.fosOutlineWidth ?? 3;
-      ctx.textBaseline = "bottom";
-
-      const tw = ctx.measureText(fosStr).width;
-      let textX;
-      if (isRTL) {
-        // 앵커가 오른쪽 끝 — 텍스트가 왼쪽으로 뻗으므로 오른쪽 여백 기준 클램프
-        textX = Math.max(margin + tw, Math.min(W - margin, ccx));
-        ctx.textAlign = "right";
-      } else {
-        // 앵커가 왼쪽 끝 — 텍스트가 오른쪽으로 뻗으므로 왼쪽 여백 기준 클램프
-        textX = Math.max(margin, Math.min(W - margin - tw, ccx));
-        ctx.textAlign = "left";
-      }
-      if (showFosOutline) ctx.strokeText(fosStr, textX, textY);
-      ctx.fillText(fosStr, textX, textY);
-
-      ctx.strokeStyle = fosUnderline;
-      ctx.lineWidth   = 1.5;
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      if (isRTL) {
-        ctx.moveTo(textX - tw, textY);
-        ctx.lineTo(textX,      textY);
-      } else {
-        ctx.moveTo(textX,      textY);
-        ctx.lineTo(textX + tw, textY);
-      }
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
+  drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyle });
 }
 
 // ─── 케이스 오버라이드 헬퍼 ──────────────────────────────────
@@ -1245,9 +1338,7 @@ async function updateCanvas(idx) {
   const surchargeLoads = extractSurchargeLoads(rvState.doc, result.analysisName);
   const piezoLines     = extractPiezometricLines(rvState.doc, result.analysisName);
   const slipEntryExit  = extractSlipEntryExit(rvState.doc, result.analysisName);
-  const slip = Number.isFinite(result.centerX)
-    ? { centerX: result.centerX, centerY: result.centerY, radius: result.radius, fos: result.fos }
-    : null;
+  const slip = buildSlipPayload(result);
 
   // 진행 중인 스타일 애니메이션 취소 → 현재 목표값으로 즉시 스냅
   if (_slipAnimId !== null) { cancelAnimationFrame(_slipAnimId); _slipAnimId = null; }
@@ -1677,9 +1768,7 @@ async function handleExcelDownload() {
       const surchargeLoads = extractSurchargeLoads(rvState.doc, caseResult.analysisName);
       const piezoLines     = extractPiezometricLines(rvState.doc, caseResult.analysisName);
       const slipEntryExit  = extractSlipEntryExit(rvState.doc, caseResult.analysisName);
-      const slip = Number.isFinite(caseResult.centerX)
-        ? { centerX: caseResult.centerX, centerY: caseResult.centerY, radius: caseResult.radius, fos: caseResult.fos }
-        : null;
+      const slip = buildSlipPayload(caseResult);
       renderResultCanvas(offCanvas, rvState.regions, rvState.materials, rmap, slip, surchargeLoads, piezoLines,
         { forExcel: true, width: excelRenderW, viewRegion: rvViewRegion, fixedHeight: excelFixedH, slipStyle: rvSlipStyle, slipEntryExit });
       if (!hasCropW) return offCanvas.toDataURL("image/png");
