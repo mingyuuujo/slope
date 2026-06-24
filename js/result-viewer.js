@@ -1535,6 +1535,35 @@ function downloadCanvasImage() {
   a.click();
 }
 
+async function copyCanvasToClipboard() {
+  if (!rvRenderCache) return;
+  const srcCanvas = $("rv-canvas");
+  if (!srcCanvas) return;
+
+  const btn = $("rv-copy-btn");
+  const origText = btn?.textContent ?? "";
+
+  try {
+    // 흰 배경으로 오프스크린 렌더링 (현재 캔버스와 동일 크기)
+    const offCanvas = document.createElement("canvas");
+    const { regionMatMap, surchargeLoads, piezoLines, slip, slipEntryExit } = rvRenderCache;
+    renderResultCanvas(offCanvas, rvState.regions, rvState.materials, regionMatMap, slip,
+      surchargeLoads, piezoLines,
+      { forExcel: true, width: srcCanvas.width, viewRegion: rvViewRegion,
+        fixedHeight: rvFixedHeight, slipStyle: rvSlipStyle, slipEntryExit });
+
+    const blob = await new Promise((resolve) => offCanvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("blob 생성 실패");
+
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+
+    if (btn) { btn.textContent = "✓ 복사됨"; setTimeout(() => { btn.textContent = origText; }, 1500); }
+  } catch (e) {
+    console.error("클립보드 복사 실패:", e);
+    if (btn) { btn.textContent = "✗ 실패"; setTimeout(() => { btn.textContent = origText; }, 2000); }
+  }
+}
+
 // ─── 파일 로드 ────────────────────────────────────────────────
 async function loadGszFile(file) {
   const JSZip = await getJSZip();
@@ -1908,6 +1937,7 @@ export function initResultViewer() {
 
   if (pngBtn)   pngBtn.addEventListener("click", downloadCanvasImage);
   if (excelBtn) excelBtn.addEventListener("click", handleExcelDownload);
+  $("rv-copy-btn")?.addEventListener("click", copyCanvasToClipboard);
 
   // 시공시 단계 추가 버튼
   $("rv-construction-add")?.addEventListener("click", () => addConstructionStageRow());
