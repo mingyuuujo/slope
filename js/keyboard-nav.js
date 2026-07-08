@@ -46,7 +46,28 @@ export function installTableArrowNav(tbody, opts = {}) {
     const cellIdx = cells.indexOf(tgt);
     const safeIdx = Math.max(cellIdx, 0);
 
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (cellIdx + 1 < cells.length) {
+        cells[cellIdx + 1].focus();
+        cells[cellIdx + 1].select?.();
+      } else if (rowIdx + 1 < rows.length) {
+        const nextCells = getFocusables(rows[rowIdx + 1]);
+        if (nextCells[0]) { nextCells[0].focus(); nextCells[0].select?.(); }
+      }
+
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (cellIdx > 0) {
+        cells[cellIdx - 1].focus();
+        cells[cellIdx - 1].select?.();
+      } else if (rowIdx > 0) {
+        const prevCells = getFocusables(rows[rowIdx - 1]);
+        const target = prevCells[prevCells.length - 1];
+        if (target) { target.focus(); target.select?.(); }
+      }
+
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const nextRowIdx = rowIdx + (e.key === 'ArrowDown' ? 1 : -1);
       if (nextRowIdx < 0 || nextRowIdx >= rows.length) return;
