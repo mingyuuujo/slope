@@ -47,6 +47,11 @@ export function installTableArrowNav(tbody, opts = {}) {
     const safeIdx = Math.max(cellIdx, 0);
 
     if (e.key === 'ArrowRight') {
+      // select는 커서 개념 없음; input은 커서가 맨 끝에 단독 위치일 때만 이동
+      const isSelect = tgt.tagName === 'SELECT';
+      const cursorAtEnd = isSelect
+        || (tgt.selectionStart === tgt.selectionEnd && tgt.selectionEnd === tgt.value.length);
+      if (!cursorAtEnd) return;
       e.preventDefault();
       if (cellIdx + 1 < cells.length) {
         cells[cellIdx + 1].focus();
@@ -57,6 +62,11 @@ export function installTableArrowNav(tbody, opts = {}) {
       }
 
     } else if (e.key === 'ArrowLeft') {
+      // 커서가 맨 앞에 단독 위치일 때만 이전 칸으로 이동
+      const isSelect = tgt.tagName === 'SELECT';
+      const cursorAtStart = isSelect
+        || (tgt.selectionStart === tgt.selectionEnd && tgt.selectionStart === 0);
+      if (!cursorAtStart) return;
       e.preventDefault();
       if (cellIdx > 0) {
         cells[cellIdx - 1].focus();
