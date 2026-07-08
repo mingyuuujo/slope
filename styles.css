@@ -2307,3 +2307,15 @@ table.data-table td.readonly-cell input {
   white-space: nowrap;
 }
 .btn-sm:hover { background: var(--btn-hover-bg); }
+
+/* DXF → GeoStudio 변환 탭 상태 표시 */
+.dxf-gs-status {
+  font-size: 0.875em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  align-self: center;
+}
+.dxf-gs-status--idle    { color: var(--muted); }
+.dxf-gs-status--running { color: var(--accent); }
+.dxf-gs-status--ok      { color: #4caf50; }
+.dxf-gs-status--error   { color: var(--danger, #e53935); }

@@ -46,6 +46,7 @@ import {
   clientToWorldWithView,
   worldToCanvasWithView,
 } from "./map-preview.js";
+import { initDxfGeoStudioTab } from "./dxf-geostudio-ui.js";
 
 /** Region 매핑: 해석별 GeoStudio Region ID → Material (여러 Analysis 지원) */
 const mapAnalysesState = {
@@ -3310,6 +3311,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   initGszEditor();
   initResultViewer();
+  initDxfGeoStudioTab();
   initMaterialsTable();
   const matBody = document.getElementById("mat-tbody");
   matBody.addEventListener("click", (e) => {
