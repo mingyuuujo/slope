@@ -41,10 +41,14 @@ export function buildRegionSpanData(dxfLayers, geometryLayers, log = () => {}) {
         );
         ring = dedupeConsecutivePolyXY(ring);
       }
-      if (ring.length < 3) continue;
+      if (ring.length < 3) {
+        log(`  [진단-스냅드롭] ${layer}: 격자 스냅 후 꼭짓점 ${ring.length}개 (원본 ${poly.length}개)`);
+        continue;
+      }
       workEntries.push([layer, ring]);
     }
   }
+  log(`  위상 보정 대상: ${workEntries.length}개 링`);
 
   if (workEntries.length && COORD_GRID_SNAP && COORD_GRID_SNAP > 0) {
     log(`  좌표 격자 스냅 간격: ${COORD_GRID_SNAP} m`);
@@ -96,8 +100,10 @@ export function buildRegionSpanData(dxfLayers, geometryLayers, log = () => {}) {
     spanLayers.push([layer, s, flat2.length]);
   }
 
+  // 위상 보정 후 재병합은 부동소수점 노이즈만 제거. VERTEX_MERGE_EPS(0.08m)로
+  // 병합하면 Steiner 삽입점이 인접 꼭짓점과 합쳐져 소형 링이 퇴화할 수 있음.
   const merged_final =
-    flat2.length > 0 ? mergeCoincidentVertices(flat2, VERTEX_MERGE_EPS) : [];
+    flat2.length > 0 ? mergeCoincidentVertices(flat2, 1e-6) : [];
   if (flat2.length) {
     const uq2 = new Set(
       merged_final.map(([x, y]) =>

@@ -5,9 +5,11 @@
 export function readLayersFromDxfParsed(dxf) {
   const layers = {};
   const ents = dxf.entities || [];
+  let totalPoly = 0, accepted = 0;
   for (const ent of ents) {
     const type = ent.type;
     if (type !== "LWPOLYLINE" && type !== "POLYLINE") continue;
+    totalPoly++;
     const layer = String(ent.layer ?? "0").trim();
 
     let closed = false;
@@ -24,11 +26,27 @@ export function readLayersFromDxfParsed(dxf) {
         pts = ent.vertices.map((v) => [Number(v.x), Number(v.y)]);
     }
 
+    // 닫힘 플래그 없이 첫점=끝점으로 닫힘을 표현하는 CAD 출력 방식 대응
+    if (pts.length >= 2) {
+      const a = pts[0], b = pts[pts.length - 1];
+      if (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6) {
+        pts = pts.slice(0, -1);
+        closed = true;
+      }
+    }
+
     if (closed && pts.length >= 3) {
       if (!layers[layer]) layers[layer] = [];
       layers[layer].push(pts);
+      accepted++;
+    } else {
+      const firstLast = pts.length >= 2
+        ? Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]).toExponential(3)
+        : "N/A";
+      console.warn(`[DXF skip] type=${type} layer=${layer} closed=${closed} pts=${pts.length} firstLastDist=${firstLast}`, ent);
     }
   }
+  console.log(`[DXF] total=${totalPoly} accepted=${accepted}`);
   return layers;
 }
 

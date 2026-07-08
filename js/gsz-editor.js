@@ -13,6 +13,7 @@ import {
   setMaterialDisplayName,
   createEl,
 } from "./xml-utils.js";
+import { installTableArrowNav } from "./keyboard-nav.js";
 
 const LS_KEY = "slope-gsz-editor-v2";
 
@@ -1103,5 +1104,16 @@ export function initGszEditor() {
   // 윈도우 리사이즈
   window.addEventListener("resize", () => {
     if (gState?.slopeItems.length) drawRegionCanvas();
+  });
+
+  // GSZ 편집 테이블 키보드 탐색 (이벤트 위임 — tbody 재빌드 후에도 유효)
+  [
+    "gszedit-mat-tbody",
+    "gszedit-pressure-tbody",
+    "gszedit-lineload-tbody",
+    "gszedit-water-tbody",
+  ].forEach((id) => {
+    const el = $id(id);
+    if (el) installTableArrowNav(el);
   });
 }

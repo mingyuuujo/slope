@@ -22,6 +22,7 @@ import {
   parseDxfText,
 } from "./deps.js";
 import { serializeXmlDocument, allChildEl, firstChildEl, findFirstTag } from "./xml-utils.js";
+import { installTableArrowNav, installWheelBlockOnNumberInputs } from "./keyboard-nav.js";
 import { listMaterialsFromDocument } from "./template-materials.js";
 import { listAnalysesFromDocument, ensureAnalysisExists } from "./analyses.js";
 import {
@@ -1048,6 +1049,15 @@ function bindWaterTableUI() {
   const tbody = document.getElementById("map-water-tbody");
   if (!tbody || tbody.dataset.bound) return;
   tbody.dataset.bound = "1";
+  installTableArrowNav(tbody, {
+    onEnterLastRow() {
+      syncWaterPointsFromTable();
+      const last = mapWaterPoints[mapWaterPoints.length - 1];
+      mapWaterPoints.push({ x: last ? last.x : 0, y: last ? last.y : 0 });
+      renderWaterTable();
+      redrawMapDxfPreview();
+    },
+  });
   tbody.addEventListener("input", (e) => {
     if (
       !e.target.classList.contains("map-water-x") &&
@@ -2003,6 +2013,9 @@ function bindMapAnalysisTable() {
   const tbody = document.getElementById("map-analysis-tbody");
   if (!tbody || tbody.dataset.bound) return;
   tbody.dataset.bound = "1";
+  installTableArrowNav(tbody, {
+    cellSelector: 'input.map-analysis-id-inp, input.map-analysis-title-inp, input.map-analysis-kh-inp',
+  });
   tbody.addEventListener("change", (e) => {
     const t = e.target;
     const tr = t.closest("tr");
@@ -3310,6 +3323,13 @@ document.addEventListener("DOMContentLoaded", () => {
       tr.setAttribute("data-selected", "1");
     }
   });
+  // 물성치 테이블 키보드 탐색 (↑↓ 행 이동, Enter 다음 행, Tab 칸 순환)
+  installTableArrowNav(matBody, { onEnterLastRow: matAddRow });
+  // Region 매핑 테이블 키보드 탐색
+  const mapTbody = document.getElementById("map-tbody");
+  if (mapTbody) installTableArrowNav(mapTbody);
+  // input[type=number] 마우스 휠 차단 (편심 지지력 탭 등)
+  installWheelBlockOnNumberInputs();
 
   document.getElementById("mat-add-row").addEventListener("click", matAddRow);
   document.getElementById("mat-del-row").addEventListener("click", matDelSelectedRow);

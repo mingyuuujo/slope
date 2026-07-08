@@ -203,31 +203,43 @@ export function topologyRefineRings(rings, tol, maxIter) {
   if (!rings.length) return [rings, 0];
   const tol2 = tol * tol;
   const epsT = 1e-7;
-  const epEnd2 = 1e-16;
+  const epEnd2 = 1e-10;
 
+  // Gauss-Seidel: cur[ri]를 즉시 교체해 이번 반복 내에서 cascade 전파.
+  // Jacobi(nxt 배열)는 단계마다 2배 느려져 500+회 필요하지만,
+  // Gauss-Seidel은 보통 20회 내 수렴.
   let cur = rings.map((r) => r.map((p) => [p[0], p[1]]));
   let usedIter = 0;
 
   for (let iteration = 0; iteration < maxIter; iteration++) {
     usedIter = iteration + 1;
-    const candidates = mergeCandidatePoints(
-      collectRingVerticesUnique(cur),
-      pairwiseInteriorIntersections(cur),
-    );
-    let changed = false;
-    const nxt = [];
-    for (const ring of cur) {
-      if (ring.length < 3) {
-        nxt.push(ring);
-        continue;
+    const crossPts = pairwiseInteriorIntersections(cur);
+    let anyInserted = false;
+    let iterInserts = 0;
+
+    for (let ri = 0; ri < cur.length; ri++) {
+      const ring = cur[ri];
+      if (ring.length < 3) continue;
+
+      const seen = new Set();
+      const candidates = [];
+      for (let rj = 0; rj < cur.length; rj++) {
+        if (rj === ri) continue;
+        for (const [x, y] of cur[rj]) {
+          const k = `${x},${y}`;
+          if (!seen.has(k)) { seen.add(k); candidates.push([x, y]); }
+        }
       }
+      for (const [x, y] of crossPts) {
+        const k = `${x},${y}`;
+        if (!seen.has(k)) { seen.add(k); candidates.push([x, y]); }
+      }
+
       const nn = ring.length;
       const out = [];
       for (let ii = 0; ii < nn; ii++) {
-        const ax = ring[ii][0],
-          ay = ring[ii][1];
-        const bx = ring[(ii + 1) % nn][0],
-          by = ring[(ii + 1) % nn][1];
+        const ax = ring[ii][0], ay = ring[ii][1];
+        const bx = ring[(ii + 1) % nn][0], by = ring[(ii + 1) % nn][1];
         out.push([ax, ay]);
         const inserts = [];
         for (const [px, py] of candidates) {
@@ -243,16 +255,24 @@ export function topologyRefineRings(rings, tol, maxIter) {
           if (te > prevTe + 1e-7) {
             out.push([px, py]);
             prevTe = te;
-            changed = true;
           }
         }
       }
       let refined = dedupeConsecutivePolyXY(out);
       if (refined.length < 3) refined = [...ring];
-      nxt.push(refined);
+
+      // 즉시 갱신: 이후 링이 이번 반복에서 이미 갱신된 이웃 꼭짓점을 봄
+      cur[ri] = refined;
+      if (refined.length > ring.length) {
+        anyInserted = true;
+        iterInserts += refined.length - ring.length;
+      }
     }
-    cur = nxt;
-    if (!changed) break;
+
+    if (iteration < 10 || !anyInserted) {
+      console.log(`[위상] 반복${usedIter}: 교차점=${crossPts.length} 삽입=${iterInserts}`);
+    }
+    if (!anyInserted) break;
   }
   return [cur, usedIter];
 }
