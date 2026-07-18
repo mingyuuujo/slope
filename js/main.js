@@ -939,7 +939,7 @@ function matDelSelectedRow() {
   const tbody = document.getElementById("mat-tbody");
   const selected = tbody.querySelectorAll("tr[data-selected]");
   if (!selected.length) {
-    toast("삭제할 행을 선택(Ctrl+클릭으로 다중 선택)한 뒤 눌러 주세요.", false);
+    toast("삭제할 행을 선택(Ctrl+클릭: 개별, Shift+클릭: 범위)한 뒤 눌러 주세요.", false);
     return;
   }
   selected.forEach((r) => r.remove());
@@ -3314,15 +3314,27 @@ document.addEventListener("DOMContentLoaded", () => {
   initDxfGeoStudioTab();
   initMaterialsTable();
   const matBody = document.getElementById("mat-tbody");
+  let matAnchorTr = null;
   matBody.addEventListener("click", (e) => {
     const tr = e.target.closest("tr");
     if (!tr || !matBody.contains(tr)) return;
-    if (e.ctrlKey || e.metaKey) {
+    if (e.shiftKey && matAnchorTr && matBody.contains(matAnchorTr)) {
+      const rows = [...matBody.querySelectorAll("tr")];
+      const aIdx = rows.indexOf(matAnchorTr);
+      const bIdx = rows.indexOf(tr);
+      const lo = Math.min(aIdx, bIdx), hi = Math.max(aIdx, bIdx);
+      rows.forEach((r, i) => {
+        if (i >= lo && i <= hi) r.setAttribute("data-selected", "1");
+        else if (!e.ctrlKey && !e.metaKey) r.removeAttribute("data-selected");
+      });
+    } else if (e.ctrlKey || e.metaKey) {
       if (tr.hasAttribute("data-selected")) tr.removeAttribute("data-selected");
       else tr.setAttribute("data-selected", "1");
+      matAnchorTr = tr;
     } else {
       matBody.querySelectorAll("tr").forEach((r) => r.removeAttribute("data-selected"));
       tr.setAttribute("data-selected", "1");
+      matAnchorTr = tr;
     }
   });
   // 물성치 테이블 키보드 탐색 (↑↓ 행 이동, Enter 다음 행, Tab 칸 순환)
@@ -3388,7 +3400,15 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
         const tbody = document.getElementById("mat-tbody");
-        tbody.innerHTML = "";
+        const existingCount = tbody.querySelectorAll("tr").length;
+        const hasData = existingCount > 0 && [...tbody.querySelectorAll("tr")].some((r) => {
+          const nameInp = r.querySelector('td[data-col="1"] input');
+          return nameInp && nameInp.value.trim();
+        });
+        const append = hasData && window.confirm(
+          `기존 물성치 ${existingCount}개가 있습니다.\n\n[확인]  기존 목록에 추가\n[취소]  기존 목록 덮어쓰기`
+        );
+        if (!append) tbody.innerHTML = "";
         mats.forEach((m) => {
           const tr = createMatRow({
             id:         m.id   != null ? String(m.id) : "",
@@ -3408,7 +3428,7 @@ document.addEventListener("DOMContentLoaded", () => {
           applyRowEditPolicy(tr);
         });
         renumberMatRows();
-        toast(`${mats.length}개 물성치를 가져왔습니다.`);
+        toast(`${mats.length}개 물성치를 ${append ? "추가" : "가져"}왔습니다.`);
       } catch (err) {
         toast(`JSON 파싱 오류: ${err.message}`, false);
       }
