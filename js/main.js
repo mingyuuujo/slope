@@ -3405,30 +3405,56 @@ document.addEventListener("DOMContentLoaded", () => {
           const nameInp = r.querySelector('td[data-col="1"] input');
           return nameInp && nameInp.value.trim();
         });
-        const append = hasData && window.confirm(
-          `기존 물성치 ${existingCount}개가 있습니다.\n\n[확인]  기존 목록에 추가\n[취소]  기존 목록 덮어쓰기`
-        );
-        if (!append) tbody.innerHTML = "";
-        mats.forEach((m) => {
-          const tr = createMatRow({
-            id:         m.id   != null ? String(m.id) : "",
-            name:       m.name ?? "",
-            model:      m.model ?? "MohrCoulomb",
-            uw:         m.uw         != null ? String(m.uw)         : "",
-            dw:         m.dw         != null ? String(m.dw)         : "",
-            c:          m.c          != null ? String(m.c)          : "",
-            phi:        m.phi        != null ? String(m.phi)        : "",
-            c_top:      m.c_top      != null ? String(m.c_top)      : "",
-            c_rate:     m.c_rate     != null ? String(m.c_rate)     : "",
-            c_datum:    m.c_datum    != null ? String(m.c_datum)    : "",
-            datum_elev: m.datum_elev != null ? String(m.datum_elev) : "",
-            color:      m.color ?? "",
+
+        const applyImport = (append) => {
+          if (!append) tbody.innerHTML = "";
+          mats.forEach((m) => {
+            const tr = createMatRow({
+              id:         m.id   != null ? String(m.id) : "",
+              name:       m.name ?? "",
+              model:      m.model ?? "MohrCoulomb",
+              uw:         m.uw         != null ? String(m.uw)         : "",
+              dw:         m.dw         != null ? String(m.dw)         : "",
+              c:          m.c          != null ? String(m.c)          : "",
+              phi:        m.phi        != null ? String(m.phi)        : "",
+              c_top:      m.c_top      != null ? String(m.c_top)      : "",
+              c_rate:     m.c_rate     != null ? String(m.c_rate)     : "",
+              c_datum:    m.c_datum    != null ? String(m.c_datum)    : "",
+              datum_elev: m.datum_elev != null ? String(m.datum_elev) : "",
+              color:      m.color ?? "",
+            });
+            tbody.appendChild(tr);
+            applyRowEditPolicy(tr);
           });
-          tbody.appendChild(tr);
-          applyRowEditPolicy(tr);
+          renumberMatRows();
+          toast(`${mats.length}개 물성치를 ${append ? "추가" : "가져"}왔습니다.`);
+        };
+
+        if (!hasData) {
+          applyImport(false);
+          return;
+        }
+
+        const backdrop = document.createElement("div");
+        backdrop.className = "confirm-backdrop";
+        backdrop.innerHTML = `
+          <div class="confirm-dialog" role="dialog" aria-modal="true">
+            <h3>물성치 가져오기</h3>
+            <p>현재 물성치 ${existingCount}개가 있습니다.<br>가져온 데이터를 어떻게 반영할까요?</p>
+            <div class="confirm-actions">
+              <button type="button" class="btn btn-primary" data-action="append">기존 목록에 추가</button>
+              <button type="button" class="btn btn-danger"  data-action="overwrite">덮어쓰기</button>
+              <button type="button" class="btn"             data-action="cancel">취소</button>
+            </div>
+          </div>`;
+        document.body.appendChild(backdrop);
+        backdrop.addEventListener("click", (ev) => {
+          const action = ev.target.closest("[data-action]")?.dataset.action;
+          if (!action) return;
+          backdrop.remove();
+          if (action === "cancel") return;
+          applyImport(action === "append");
         });
-        renumberMatRows();
-        toast(`${mats.length}개 물성치를 ${append ? "추가" : "가져"}왔습니다.`);
       } catch (err) {
         toast(`JSON 파싱 오류: ${err.message}`, false);
       }
