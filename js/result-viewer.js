@@ -463,8 +463,8 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
 
   const loadColor  = isDark ? "rgba(230,230,230,0.95)" : "rgba(20,20,20,0.90)";
   const ARROW_H_PX = 10;
-  const HEAD_H     = 4.5;
-  const HEAD_W     = 2.5;
+  const HEAD_H     = 3.0;
+  const HEAD_W     = 1.4;
 
   ctx.save();
 
@@ -494,7 +494,7 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
     ctx.stroke();
 
     // 화살표: 각 위치의 보간된 지형면 y에 화살촉이 정확히 닿음
-    const nArrows = Math.max(2, Math.round(spanPx / 9) + 1);
+    const nArrows = Math.max(2, Math.round(spanPx / 5) + 1);
     for (let i = 0; i < nArrows; i++) {
       const t     = (nArrows > 1) ? i / (nArrows - 1) : 0;
       const ax    = cx1 + t * (cx2 - cx1);
