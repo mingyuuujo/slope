@@ -1600,7 +1600,7 @@ async function loadGszFile(file) {
   rvState.regions   = doc ? extractRegions(doc)   : [];
 
   setStatus("해석 결과 파싱 중...");
-  rvState.allResults = await parseAllResults(zip);
+  rvState.allResults = await parseAllResults(zip, doc);
   rvState.selectedIdx = 0;
 
   // 해석 선택 드롭다운

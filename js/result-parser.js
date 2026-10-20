@@ -206,9 +206,11 @@ export async function parseRootXml(zip) {
  *   profile: Array<{x:number,y:number}>|null
  * }>>}
  */
-export async function parseAllResults(zip) {
+export async function parseAllResults(zip, doc = null) {
   const dirs = listAnalysisDirs(zip);
   const results = [];
+  const xmlNames = doc ? [...doc.querySelectorAll("Analyses > Analysis")]
+    .map((a) => a.querySelector("Name")?.textContent.trim()).filter(Boolean) : [];
 
   for (const dir of dirs) {
     const fosData = await parseCriticalFOS(zip, dir);
@@ -219,10 +221,12 @@ export async function parseAllResults(zip) {
       parseCriticalSlipProfile(zip, dir, fosData.slipId),
     ]);
     const name = dir.split("/").pop() || dir; // 마지막 경로 세그먼트
+    // GeoStudio는 결과 폴더명의 ':'를 '&4'로 바꿔 저장한다.
+    const analysisName = xmlNames.find((xmlName) => xmlName.replaceAll(":", "&4") === name) ?? name;
 
     results.push({
       dir,
-      analysisName: name,
+      analysisName,
       fos: fosData.fos,
       slipId: fosData.slipId,
       centerX: geoData?.centerX ?? NaN,
