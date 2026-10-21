@@ -2387,3 +2387,8 @@ table.data-table td.readonly-cell input {
 #bm-table input[type=number] { width: 84px; }
 #bm-table input.bm-changed { outline: 2px solid var(--accent); background: var(--accent-soft); }
 #bm-table .bm-warn { color: var(--danger, #e53935); font-size: 0.8em; }
+
+/* DXF 교체 시 매핑 승계 표시 */
+.map-carry-check td:first-child { box-shadow: inset 3px 0 0 #e0a100; }
+.map-carry-none td:first-child { box-shadow: inset 3px 0 0 #e11d48; }
+.map-carry-ok td:first-child { box-shadow: inset 3px 0 0 var(--success-hover); }

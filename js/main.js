@@ -49,6 +49,7 @@ import {
 import { initDxfGeoStudioTab } from "./dxf-geostudio-ui.js";
 import { initBatchDashboard } from "./batch-dashboard.js";
 import { initBatchMaterials } from "./batch-materials.js";
+import { matchRegions, carryOverMaterials } from "./region-carryover.js";
 
 /** Region 매핑: 해석별 GeoStudio Region ID → Material (여러 Analysis 지원) */
 const mapAnalysesState = {
@@ -598,6 +599,9 @@ function geometryLayersExceptWater() {
     Object.keys(mapDxfLayersCache).filter((l) => l !== WATER_TABLE_LAYER_NAME),
   );
 }
+
+/** DXF 교체 시 이전 매핑을 승계한 Region 정보: 새 regId → {oldId, cost, confident} */
+let mapCarryInfo = new Map();
 
 function recomputeRegionPreviewCache() {
   if (!mapDxfLayersCache) {
@@ -1888,6 +1892,13 @@ function refillMapRegionTbodyFromCache() {
       mid != null && mid !== 0 && Number.isFinite(mid) ? String(mid) : "";
     const tr = document.createElement("tr");
     tr.dataset.regionId = String(regId);
+    if (mapCarryInfo.size) {
+      const c = mapCarryInfo.get(regId);
+      tr.classList.add(!c ? "map-carry-none" : c.confident ? "map-carry-ok" : "map-carry-check");
+      tr.title = !c ? "이전 Region 과 짝이 없어 레이어 기본값을 썼습니다"
+        : c.confident ? `이전 R${c.oldId} 의 재료를 승계했습니다`
+        : `이전 R${c.oldId} 의 재료를 승계했지만 위치 차이가 커서 확인이 필요합니다`;
+    }
     tr.innerHTML = `
       <td class="map-cell-label">R${escapeHtml(String(regId))}</td>
       <td class="map-cell-text">${escapeHtml(layer)}</td>
@@ -3224,6 +3235,11 @@ document.addEventListener("DOMContentLoaded", () => {
     .getElementById("map-template")
     .addEventListener("change", refreshMapTemplateMaterials);
   document.getElementById("map-dxf").addEventListener("change", async (e) => {
+    // 이전 DXF 의 Region 도형과 해석별 매핑을 보관해 새 DXF 에 승계한다.
+    flushActiveAnalysisRegionsFromTable();
+    const prevRegions = mapRegionPreviewCache?.regions ?? null;
+    const prevMaps = mapAnalysesState.rows.map((r) => ({ ...(r.regionMaterials ?? {}) }));
+    mapCarryInfo = new Map();
     mapDxfLayersCache = null;
     mapRegionPreviewCache = null;
     resetMapPreviewView(mapDxfCanvasView);
@@ -3237,6 +3253,21 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       if (logEl) logEl.textContent = "";
       await performDxfScan(f, logEl);
+      if (prevRegions?.length && mapRegionPreviewCache?.regions?.length) {
+        const newRegions = mapRegionPreviewCache.regions;
+        mapCarryInfo = matchRegions(prevRegions, newRegions);
+        mapAnalysesState.rows.forEach((row, i) =>
+          carryOverMaterials(prevMaps[i] ?? {}, row.regionMaterials, mapCarryInfo));
+        refillMapRegionTbodyFromCache();
+        const low = [...mapCarryInfo.values()].filter((v) => !v.confident).length;
+        const none = newRegions.length - mapCarryInfo.size;
+        if (logEl) {
+          logEl.textContent += `✓ 이전 매핑 승계: ${mapCarryInfo.size}/${newRegions.length}개 Region`
+            + (low ? ` · 확인 필요(위치 차이 큼) ${low}개` : "")
+            + (none ? ` · 짝 없음(레이어 기본값) ${none}개` : "") + "
+";
+        }
+      }
       toast("DXF 스캔 완료 (파일 선택 시 자동)");
     } catch (err) {
       mapDxfLayersCache = null;
