@@ -1,4 +1,4 @@
-﻿"""GeoStudio 2012 일괄 해석 러너.
+"""GeoStudio 2012 일괄 해석 러너.
 
 폴더(또는 .gsz 파일들)를 GeoCmd.exe /solve 로 순차 해석하고,
 해석된 .gsz 와 results.json 을 출력 폴더에 저장한다.
@@ -85,6 +85,49 @@ def collect_inputs(paths):
     return [f for f in files if f.is_file()]
 
 
+def solve_file(geocmd, dst, out, analyses=()):
+    """dst(.gsz) 를 제자리에서 해석하고 results.json 의 files[] 항목을 돌려준다."""
+    log = out / "logs" / f"{dst.stem}.log"
+    (out / "logs").mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+    proc = subprocess.run(
+        [geocmd, str(dst), *analyses, "/solve", f"/log:{log}"],
+        capture_output=True, text=True, errors="replace",
+        cwd=out / "logs",  # GeoCmd 가 작업 폴더에 임시 로그를 남긴다
+    )
+    entry = {"file": dst.name, "seconds": round(time.time() - t0, 1), "exitCode": proc.returncode,
+             "analyses": [], "error": None}
+    try:
+        entry["analyses"] = read_results(dst)
+    except Exception as e:  # 깨진 gsz 등
+        entry["error"] = f"결과 읽기 실패: {e}"
+    entry["failures"] = read_failures(log)
+    # 해석에 실패한 항목은 gsz 안에 이전 결과가 남아 있어도 새 결과로 읽지 않는다.
+    # (GeoCmd /clean 은 파일을 지워 버리므로 쓰지 않는다.)
+    failed = {f["analysis"].replace(":", "&4") for f in entry["failures"]}
+    entry["analyses"] = [a for a in entry["analyses"] if a["analysis"] not in failed]
+    if proc.returncode != 0:
+        entry["error"] = entry["error"] or "; ".join(
+            f'{f["analysis"]}: {f["reason"]}' for f in entry["failures"]) or f"GeoCmd 종료코드 {proc.returncode}"
+    return entry
+
+
+def save_run(out, run):
+    """results.json 을 쓰고, 덮어쓰기 전의 이전 실행(없으면 None)을 history/ 에 보관해 돌려준다."""
+    res = out / "results.json"
+    previous = None
+    if res.exists():
+        hist = out / "history"
+        hist.mkdir(exist_ok=True)
+        shutil.copy2(res, hist / f"results_{datetime.now():%Y%m%d_%H%M%S}.json")
+        try:
+            previous = json.loads(res.read_text(encoding="utf-8"))
+        except ValueError:
+            pass
+    res.write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding="utf-8")
+    return previous
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -108,36 +151,15 @@ def main():
         dst = out / src.name
         if src.resolve() != dst.resolve():
             shutil.copy2(src, dst)  # 원본은 건드리지 않는다
-        log = out / "logs" / f"{src.stem}.log"
         print(f"[{i}/{len(files)}] {src.name} 해석 중...", flush=True)
-        t0 = time.time()
-        proc = subprocess.run(
-            [geocmd, str(dst), *args.analysis, "/solve", f"/log:{log}"],
-            capture_output=True, text=True, errors="replace",
-            cwd=out / "logs",  # GeoCmd 가 작업 폴더에 임시 로그를 남긴다
-        )
-        sec = round(time.time() - t0, 1)
-        entry = {"file": src.name, "seconds": sec, "exitCode": proc.returncode, "analyses": [], "error": None}
-        try:
-            entry["analyses"] = read_results(dst)
-        except Exception as e:  # 깨진 gsz 등
-            entry["error"] = f"결과 읽기 실패: {e}"
-        entry["failures"] = read_failures(log)
-        if proc.returncode != 0:
-            entry["error"] = entry["error"] or "; ".join(
-                f'{f["analysis"]}: {f["reason"]}' for f in entry["failures"]) or f"GeoCmd 종료코드 {proc.returncode}"
+        entry = solve_file(geocmd, dst, out, args.analysis)
         no_fos = [a["analysis"] for a in entry["analyses"] if a["fos"] is None]
-        print(f"    {sec}s, 해석 {len(entry['analyses'])}개, FOS 없음 {len(no_fos)}개"
+        print(f"    {entry['seconds']}s, 해석 {len(entry['analyses'])}개, FOS 없음 {len(no_fos)}개"
               + (f", 오류: {entry['error']}" if entry["error"] else ""), flush=True)
         run["files"].append(entry)
 
-    # 이전 실행은 history/ 로 보관해 전회 대비 비교에 쓴다
+    save_run(out, run)
     res = out / "results.json"
-    if res.exists():
-        hist = out / "history"
-        hist.mkdir(exist_ok=True)
-        shutil.copy2(res, hist / f"results_{datetime.now():%Y%m%d_%H%M%S}.json")
-    res.write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"완료: {res}")
 
 
