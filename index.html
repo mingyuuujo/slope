@@ -46,6 +46,8 @@
     <button type="button" class="tab-btn" data-tab="result" role="tab">결과 뷰어</button>
     <button type="button" class="tab-btn" data-tab="eccentric" role="tab">편심 지지력 검토</button>
     <button type="button" class="tab-btn" data-tab="dxf-convert" role="tab">DXF → GeoStudio</button>
+    <button type="button" class="tab-btn" data-tab="batch-mat" role="tab">일괄 물성 적용</button>
+    <button type="button" class="tab-btn" data-tab="batch" role="tab">배치 결과</button>
   </nav>
 
   <main class="shell">
@@ -1225,6 +1227,81 @@
           <strong>Regions</strong> — Region · Points (쉼표 구분 Point ID) · Type<br>
           GeoStudio Slope/W의 <em>File → Import → Points/Regions from Excel</em> 에서 직접 가져올 수 있습니다.
         </p>
+      </div>
+    </section>
+
+    <section id="panel-batch-mat" class="panel" role="tabpanel">
+      <div class="group">
+        <span class="group-title">1. GSZ 파일 (여러 개 선택)</span>
+        <div class="file-row">
+          <label for="bm-files">GSZ</label>
+          <input type="file" id="bm-files" accept=".gsz,application/octet-stream" multiple />
+        </div>
+        <p class="hint">
+          재료 <strong>이름이 같은</strong> 항목끼리 한 줄로 모아 보여줍니다. 값을 고치면 모든 파일의 같은 이름 재료에 적용되고,
+          ID·색·Region 매핑·해석 설정은 그대로 둡니다. 비워 둔 칸은 바꾸지 않습니다.
+        </p>
+      </div>
+      <div class="group">
+        <span class="group-title">2. 물성 라이브러리 (선택)</span>
+        <div class="file-row">
+          <label for="bm-import-lib">라이브러리 JSON</label>
+          <input type="file" id="bm-import-lib" accept=".json,application/json" />
+          <button type="button" class="btn" id="bm-export-lib" style="margin-left:6px">현재 표 값 저장</button>
+        </div>
+      </div>
+      <div class="bot-row" style="margin-bottom:10px">
+        <span id="bm-summary" class="dxf-gs-status dxf-gs-status--idle"></span>
+        <button type="button" class="btn btn-success" id="bm-apply" disabled>▶ 모든 파일에 적용 및 다운로드</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="bm-table">
+          <thead id="bm-head"></thead>
+          <tbody id="bm-tbody"></tbody>
+        </table>
+      </div>
+      <div class="group">
+        <span class="group-title">변경 내역</span>
+        <pre class="log-box" id="bm-log"></pre>
+      </div>
+    </section>
+
+    <section id="panel-batch" class="panel" role="tabpanel">
+      <div class="group">
+        <span class="group-title">1. 일괄 해석 (내 PC)</span>
+        <p class="hint">
+          <code>runner/run_slope.bat</code> 위로 해석할 <code>.gsz</code> 파일 또는 폴더를 끌어다 놓으면
+          GeoStudio가 창 없이 순차 해석하고 <code>solved/results.json</code> 이 만들어집니다.
+          이전 실행은 <code>solved/history/</code> 에 보관됩니다.
+        </p>
+      </div>
+      <div class="group">
+        <span class="group-title">2. 결과 불러오기</span>
+        <div class="file-row">
+          <label for="bd-current">results.json</label>
+          <input type="file" id="bd-current" accept=".json,application/json" />
+        </div>
+        <div class="file-row">
+          <label for="bd-previous">전회 results.json</label>
+          <input type="file" id="bd-previous" accept=".json,application/json" />
+          <span class="hint" style="margin-left:6px">선택 — 물성·단면 변경 전후 FOS 비교</span>
+        </div>
+      </div>
+      <div class="group">
+        <span class="group-title">3. 기준 FOS (해석 이름 기준, 브라우저에 저장)</span>
+        <div id="bd-rules"></div>
+        <button type="button" class="btn" id="bd-add-rule">+ 규칙 추가</button>
+      </div>
+      <div class="bot-row" style="margin-bottom:10px">
+        <span id="bd-summary" class="dxf-gs-status dxf-gs-status--idle"></span>
+        <label><input type="checkbox" id="bd-only-problem"> 문제 항목만</label>
+        <button type="button" class="btn" id="bd-export">CSV 저장</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="bd-table">
+          <thead><tr><th>파일</th><th>해석</th><th>FOS</th><th>기준</th><th>판정</th><th>전회 FOS</th><th>변화</th></tr></thead>
+          <tbody id="bd-tbody"></tbody>
+        </table>
       </div>
     </section>
 

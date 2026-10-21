@@ -2372,3 +2372,18 @@ table.data-table td.readonly-cell input {
   border-color: transparent;
   color: #fff;
 }
+
+/* 배치 결과 대시보드 */
+#bd-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+#bd-table tr.bd-ng td, #bd-table tr.bd-fail td { color: var(--danger, #e53935); }
+#bd-table tr.bd-nofos td { color: var(--muted); font-style: italic; }
+#bd-table .bd-up { color: var(--success-hover); }
+#bd-table .bd-down { color: var(--danger, #e53935); }
+#bd-table .bd-reason { font-size: 0.85em; font-style: normal; }
+#bd-table .bd-empty { text-align: center; color: var(--muted); padding: 24px; }
+
+/* 일괄 물성 적용 */
+#bm-table td.num { text-align: right; }
+#bm-table input[type=number] { width: 84px; }
+#bm-table input.bm-changed { outline: 2px solid var(--accent); background: var(--accent-soft); }
+#bm-table .bm-warn { color: var(--danger, #e53935); font-size: 0.8em; }
