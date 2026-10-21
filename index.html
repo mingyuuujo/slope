@@ -47,6 +47,7 @@
     <button type="button" class="tab-btn" data-tab="eccentric" role="tab">편심 지지력 검토</button>
     <button type="button" class="tab-btn" data-tab="dxf-convert" role="tab">DXF → GeoStudio</button>
     <button type="button" class="tab-btn" data-tab="batch-mat" role="tab">일괄 물성 적용</button>
+    <button type="button" class="tab-btn" data-tab="batch-case" role="tab">케이스 템플릿</button>
     <button type="button" class="tab-btn" data-tab="batch" role="tab">배치 결과</button>
   </nav>
 
@@ -1263,6 +1264,69 @@
       <div class="group">
         <span class="group-title">변경 내역</span>
         <pre class="log-box" id="bm-log"></pre>
+      </div>
+    </section>
+
+    <section id="panel-batch-case" class="panel" role="tabpanel">
+      <div class="group">
+        <span class="group-title">1. 템플릿 (브라우저에 저장)</span>
+        <div class="file-row">
+          <label for="ct-list">템플릿</label>
+          <select id="ct-list"></select>
+          <button type="button" class="btn" id="ct-new">새로 만들기</button>
+          <button type="button" class="btn" id="ct-del">삭제</button>
+        </div>
+        <div class="file-row">
+          <label for="ct-name">이름</label>
+          <input type="text" id="ct-name" style="width:220px" />
+        </div>
+        <div class="file-row">
+          <label for="ct-water">수위</label>
+          <textarea id="ct-water" rows="3" style="width:320px" placeholder="비움 = 바꾸지 않음&#10;숫자 한 개 = 표고 수평선 (예: 1.2)&#10;여러 줄 = x,y 좌표 (예: 0,3.5)"></textarea>
+        </div>
+        <div class="file-row">
+          <label for="ct-kh">수평지진계수 kh</label>
+          <input type="text" id="ct-kh" style="width:100px" placeholder="비움 = 바꾸지 않음" />
+        </div>
+        <div class="file-row">
+          <label for="ct-pressure">상재하중</label>
+          <textarea id="ct-pressure" rows="3" style="width:320px" placeholder="한 줄에 하나: 점들 | 압력(kPa)&#10;예: 0,5 10,5 | 20&#10;비움 = 바꾸지 않음"></textarea>
+        </div>
+        <div class="file-row">
+          <button type="button" class="btn btn-success" id="ct-save">템플릿 저장</button>
+          <button type="button" class="btn" id="ct-export">JSON 내보내기</button>
+          <label for="ct-import" style="margin-left:12px">JSON 불러오기</label>
+          <input type="file" id="ct-import" accept=".json,application/json" />
+        </div>
+        <p class="hint">수위를 표고로 입력하면 단면이 바뀌어도 그 해석의 X 범위 전체에 수평선을 그립니다. 상재하중은 좌표를 직접 입력합니다.</p>
+      </div>
+      <div class="group">
+        <span class="group-title">2. GSZ 파일 (여러 개 선택)</span>
+        <div class="file-row">
+          <label for="ct-files">GSZ</label>
+          <input type="file" id="ct-files" accept=".gsz,application/octet-stream" multiple />
+        </div>
+        <div class="file-row">
+          <label for="ct-keyword">해석 이름에 포함</label>
+          <input type="text" id="ct-keyword" style="width:140px" placeholder="예: 지진" />
+          <span>→</span>
+          <select id="ct-keyword-tpl"></select>
+          <button type="button" class="btn" id="ct-keyword-go">일괄 지정</button>
+        </div>
+      </div>
+      <div class="bot-row" style="margin-bottom:10px">
+        <span id="ct-summary" class="dxf-gs-status dxf-gs-status--idle"></span>
+        <button type="button" class="btn btn-success" id="ct-apply" disabled>▶ 적용 및 다운로드</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="ct-table">
+          <thead><tr><th>파일</th><th>ID</th><th>해석</th><th>적용할 템플릿</th></tr></thead>
+          <tbody id="ct-tbody"></tbody>
+        </table>
+      </div>
+      <div class="group">
+        <span class="group-title">적용 내역</span>
+        <pre class="log-box" id="ct-log"></pre>
       </div>
     </section>
 

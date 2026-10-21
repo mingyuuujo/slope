@@ -49,6 +49,7 @@ import {
 import { initDxfGeoStudioTab } from "./dxf-geostudio-ui.js";
 import { initBatchDashboard } from "./batch-dashboard.js";
 import { initBatchMaterials } from "./batch-materials.js";
+import { initCaseTemplates } from "./case-ui.js";
 import { matchRegions, carryOverMaterials } from "./region-carryover.js";
 
 /** Region 매핑: 해석별 GeoStudio Region ID → Material (여러 Analysis 지원) */
@@ -3347,6 +3348,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initDxfGeoStudioTab();
   initBatchDashboard();
   initBatchMaterials();
+  initCaseTemplates();
   initMaterialsTable();
   const matBody = document.getElementById("mat-tbody");
   let matAnchorTr = null;

@@ -238,3 +238,49 @@ export function applyWaterDataPointsToAllSlopeItems(doc, points, log = () => {})
     `  수위 적용: ${ok}/${items.length}개 해석 (입력 ${cleaned.length}점을 DataPoints 에 추가 후 Piezometric 연결)`,
   );
 }
+
+/** 해석 ID 에 해당하는 SlopeItem 의 Entry (없으면 null). */
+export function findEntryForAnalysis(doc, analysisId) {
+  const root = findSlopeItemsRoot(doc);
+  if (!root) return null;
+  for (const si of allChildEl(root, "SlopeItem")) {
+    const aid = firstChildEl(si, "AnalysisID")?.textContent?.trim();
+    if (aid === String(analysisId)) return firstChildEl(si, "Entry");
+  }
+  return null;
+}
+
+/**
+ * 한 해석에만 수위를 적용한다 (해석마다 수위가 다른 케이스용).
+ * spec: { type: "level", elevation, xMin?, xMax? } 표고 수평선 — 단면 X 범위 전체에 걸쳐 그린다.
+ *       { type: "points", points: [{x,y}] }        좌표 꺾은선
+ * @returns {string} 적용 내용 요약, 적용하지 못하면 빈 문자열
+ */
+export function applyWaterToAnalysis(doc, analysisId, spec, log = () => {}) {
+  const entry = findEntryForAnalysis(doc, analysisId);
+  if (!entry) return "";
+  let dpRoot = firstChildEl(entry, "DataPoints");
+  if (!dpRoot) {
+    dpRoot = doc.createElement("DataPoints");
+    entry.insertBefore(dpRoot, entry.firstChild);
+  }
+  const boundary = readBoundaryVerticesFromEntry(entry);
+  let pts;
+  let desc;
+  if (spec.type === "level") {
+    if (!Number.isFinite(spec.elevation) || boundary.length < 2) return "";
+    const xs = boundary.map((v) => v.x);
+    const x0 = Number.isFinite(spec.xMin) ? spec.xMin : Math.min(...xs);
+    const x1 = Number.isFinite(spec.xMax) ? spec.xMax : Math.max(...xs);
+    pts = [{ x: x0, y: spec.elevation }, { x: x1, y: spec.elevation }];
+    desc = `수위 EL ${spec.elevation} (X ${formatCoord(x0)} ~ ${formatCoord(x1)})`;
+  } else {
+    pts = (spec.points ?? []).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+    if (pts.length < 2) return "";
+    desc = `수위 ${pts.length}점`;
+  }
+  const nums = appendWaterVerticesToDataPoints(doc, dpRoot, pts);
+  upsertPiezometricLines(doc, entry, nums);
+  upsertMaterialUsesPiezs(doc, entry, log);
+  return desc;
+}

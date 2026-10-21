@@ -2392,3 +2392,7 @@ table.data-table td.readonly-cell input {
 .map-carry-check td:first-child { box-shadow: inset 3px 0 0 #e0a100; }
 .map-carry-none td:first-child { box-shadow: inset 3px 0 0 #e11d48; }
 .map-carry-ok td:first-child { box-shadow: inset 3px 0 0 var(--success-hover); }
+
+/* 케이스 템플릿 */
+#ct-table td.num { text-align: right; }
+#panel-batch-case textarea { font-family: inherit; }
