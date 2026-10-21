@@ -1,4 +1,4 @@
-"""GeoStudio 2012 일괄 해석 러너.
+﻿"""GeoStudio 2012 일괄 해석 러너.
 
 폴더(또는 .gsz 파일들)를 GeoCmd.exe /solve 로 순차 해석하고,
 해석된 .gsz 와 results.json 을 출력 폴더에 저장한다.
@@ -99,7 +99,7 @@ def main():
     if not files:
         sys.exit("해석할 .gsz 파일이 없습니다.")
 
-    out = Path(args.out)
+    out = Path(args.out).resolve()  # cwd 를 바꿔 실행하므로 절대경로로
     out.mkdir(parents=True, exist_ok=True)
     (out / "logs").mkdir(exist_ok=True)
 
@@ -114,6 +114,7 @@ def main():
         proc = subprocess.run(
             [geocmd, str(dst), *args.analysis, "/solve", f"/log:{log}"],
             capture_output=True, text=True, errors="replace",
+            cwd=out / "logs",  # GeoCmd 가 작업 폴더에 임시 로그를 남긴다
         )
         sec = round(time.time() - t0, 1)
         entry = {"file": src.name, "seconds": sec, "exitCode": proc.returncode, "analyses": [], "error": None}
