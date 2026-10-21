@@ -18,7 +18,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 /** templates: {name, waterText, khText, pressureText}[] / files: {name, zip, xmlName, doc, analyses} */
 const state = { templates: loadTemplates(), files: [], assign: new Map() };
 
-function loadTemplates() {
+export function loadTemplates() {
   try {
     const t = JSON.parse(localStorage.getItem(STORE_KEY));
     if (Array.isArray(t)) return t;
@@ -33,7 +33,7 @@ function saveTemplates() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state.templates)); } catch { /* ignore */ }
 }
 
-function toTemplate(t) {
+export function toTemplate(t) {
   const kh = t.khText.trim();
   if (kh && !Number.isFinite(parseFloat(kh))) throw new Error(`"${t.name}": kh 가 숫자가 아닙니다.`);
   return {

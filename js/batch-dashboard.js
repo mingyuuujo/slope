@@ -117,6 +117,13 @@ function exportCsv() {
   URL.revokeObjectURL(a.href);
 }
 
+/** 자동 실행 탭이 방금 해석한 결과를 대시보드에 바로 보여줄 때 쓴다. */
+export function setBatchRun(current, previous = null) {
+  state.current = current;
+  state.previous = previous;
+  if ($("bd-tbody")) render();
+}
+
 export function initBatchDashboard() {
   if (!$("bd-tbody")) return;
   const load = (key) => async (e) => {

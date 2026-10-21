@@ -50,6 +50,7 @@ import { initDxfGeoStudioTab } from "./dxf-geostudio-ui.js";
 import { initBatchDashboard } from "./batch-dashboard.js";
 import { initBatchMaterials } from "./batch-materials.js";
 import { initCaseTemplates } from "./case-ui.js";
+import { initPipeline } from "./pipeline.js";
 import { matchRegions, carryOverMaterials } from "./region-carryover.js";
 
 /** Region 매핑: 해석별 GeoStudio Region ID → Material (여러 Analysis 지원) */
@@ -3265,8 +3266,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (logEl) {
           logEl.textContent += `✓ 이전 매핑 승계: ${mapCarryInfo.size}/${newRegions.length}개 Region`
             + (low ? ` · 확인 필요(위치 차이 큼) ${low}개` : "")
-            + (none ? ` · 짝 없음(레이어 기본값) ${none}개` : "") + "
-";
+            + (none ? ` · 짝 없음(레이어 기본값) ${none}개` : "") + "\n";
         }
       }
       toast("DXF 스캔 완료 (파일 선택 시 자동)");
@@ -3349,6 +3349,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initBatchDashboard();
   initBatchMaterials();
   initCaseTemplates();
+  initPipeline();
   initMaterialsTable();
   const matBody = document.getElementById("mat-tbody");
   let matAnchorTr = null;

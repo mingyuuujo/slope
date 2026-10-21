@@ -46,6 +46,7 @@
     <button type="button" class="tab-btn" data-tab="result" role="tab">결과 뷰어</button>
     <button type="button" class="tab-btn" data-tab="eccentric" role="tab">편심 지지력 검토</button>
     <button type="button" class="tab-btn" data-tab="dxf-convert" role="tab">DXF → GeoStudio</button>
+    <button type="button" class="tab-btn" data-tab="pipeline" role="tab">자동 실행</button>
     <button type="button" class="tab-btn" data-tab="batch-mat" role="tab">일괄 물성 적용</button>
     <button type="button" class="tab-btn" data-tab="batch-case" role="tab">케이스 템플릿</button>
     <button type="button" class="tab-btn" data-tab="batch" role="tab">배치 결과</button>
@@ -1228,6 +1229,51 @@
           <strong>Regions</strong> — Region · Points (쉼표 구분 Point ID) · Type<br>
           GeoStudio Slope/W의 <em>File → Import → Points/Regions from Excel</em> 에서 직접 가져올 수 있습니다.
         </p>
+      </div>
+    </section>
+
+    <section id="panel-pipeline" class="panel" role="tabpanel">
+      <div class="group">
+        <span class="group-title">1. 해석 러너 연결</span>
+        <p class="hint">
+          내 PC에서 <code>runner/run_server.bat</code> 을 실행해 두면 이 탭이 GeoStudio 해석까지 대신 돌립니다.
+          창에 나온 토큰(또는 <code>runner/token.txt</code>)을 한 번 입력하면 이 브라우저에 기억됩니다.
+        </p>
+        <div class="file-row">
+          <label for="pl-url">주소</label>
+          <input type="text" id="pl-url" style="width:220px" />
+          <label for="pl-token" style="margin-left:12px">토큰</label>
+          <input type="password" id="pl-token" style="width:200px" autocomplete="off" />
+          <button type="button" class="btn" id="pl-check">연결 확인</button>
+        </div>
+        <div class="file-row"><span id="pl-conn-status" class="dxf-gs-status dxf-gs-status--idle">연결 전</span></div>
+      </div>
+      <div class="group">
+        <span class="group-title">2. 입력</span>
+        <div class="file-row">
+          <label for="pl-files">GSZ (여러 개)</label>
+          <input type="file" id="pl-files" accept=".gsz,application/octet-stream" multiple />
+          <span id="pl-file-info" class="hint"></span>
+        </div>
+        <div class="file-row">
+          <label for="pl-lib">물성 라이브러리 (선택)</label>
+          <input type="file" id="pl-lib" accept=".json,application/json" />
+          <span id="pl-lib-info" class="hint"></span>
+        </div>
+        <p class="hint">라이브러리는 "일괄 물성 적용" 탭의 <em>현재 표 값 저장</em> JSON 입니다. 이름이 같은 재료에 값을 덮어씁니다.</p>
+      </div>
+      <div class="group">
+        <span class="group-title">3. 케이스 규칙 (선택)</span>
+        <textarea id="pl-rules" rows="4" style="width:420px"></textarea>
+        <p class="hint">한 줄에 <code>해석 이름 키워드 = 템플릿 이름</code>. 키워드 <code>*</code> 는 모든 해석입니다. 템플릿은 "케이스 템플릿" 탭에서 만듭니다.</p>
+      </div>
+      <div class="bot-row" style="margin-bottom:10px">
+        <label><input type="checkbox" id="pl-save-zip"> 적용한 입력 GSZ를 ZIP으로도 저장</label>
+        <button type="button" class="btn btn-success" id="pl-run">▶ 적용 → 해석 → 결과 보기</button>
+      </div>
+      <div class="group">
+        <span class="group-title">진행 상황</span>
+        <pre class="log-box" id="pl-log"></pre>
       </div>
     </section>
 
