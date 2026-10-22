@@ -38,7 +38,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .app-header { height: 72px; padding: 0 24px; align-items: center; }
 .brand { display: flex; align-items: center; gap: 12px; }
-.brand-mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; background: var(--accent); color: white; font-size: 32px; }
+.brand-mark { display: block; width: 36px; height: 36px; flex-shrink: 0; object-fit: contain; }
 .app-header h1 { font-size: 19px; letter-spacing: 1px; }
 .app-header h1 span { font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: 2px; }
 .app-header .sub { letter-spacing: .2px; color: var(--muted); }
