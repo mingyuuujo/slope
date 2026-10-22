@@ -2227,12 +2227,13 @@ table.data-table td.readonly-cell input {
 .ecc-result-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: 14px;
+  line-height: 1.5;
   min-width: min(100%, 1000px);
 }
 .ecc-result-table th,
 .ecc-result-table td {
-  padding: 3px 10px;
+  padding: 10px 14px;
   border: 1px solid var(--border);
   text-align: center;
   white-space: nowrap;
@@ -2265,15 +2266,15 @@ table.data-table td.readonly-cell input {
   font-size: 13px;
   background: var(--surface2);
 }
-.ecc-row-group {
-  font-size: 12px;
+.ecc-result-table .ecc-row-group {
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--dim);
+  color: var(--muted);
   background: var(--surface2);
-  padding-top: 8px;
-  padding-bottom: 8px;
+  padding-top: 12px;
+  padding-bottom: 12px;
 }
 .ecc-group-start td {
   border-top: 2px solid var(--border);
