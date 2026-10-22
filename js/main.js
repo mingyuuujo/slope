@@ -955,6 +955,52 @@ function matDelSelectedRow() {
   else renumberMatRows();
 }
 
+function matDupRow() {
+  const tbody = document.getElementById("mat-tbody");
+  const selected = tbody.querySelector("tr[data-selected]");
+  if (!selected) {
+    toast("복제할 행을 선택하세요.", false);
+    return;
+  }
+  const data = {
+    id: selected.querySelector("td:nth-child(1) input")?.value ?? "",
+    name: selected.querySelector("td:nth-child(2) input")?.value ?? "",
+    model: selected.querySelector("td:nth-child(3) select")?.value ?? "MohrCoulomb",
+  };
+  // 숫자 필드들
+  ["uw", "dw", "c", "phi", "c_top", "c_rate", "c_datum", "datum_elev"].forEach((k, i) => {
+    data[k] = selected.querySelector(`td:nth-child(${i + 4}) input`)?.value ?? "";
+  });
+  data.color = selected.querySelector(".color-cell input[type='text']")?.value ?? "";
+  const tr = createMatRow(data);
+  selected.parentNode.insertBefore(tr, selected.nextSibling);
+  applyRowEditPolicy(tr);
+  renumberMatRows();
+  toast("행이 복제되었습니다.");
+}
+
+function matMoveUp() {
+  const tbody = document.getElementById("mat-tbody");
+  const selected = tbody.querySelector("tr[data-selected]");
+  if (!selected || !selected.previousElementSibling) {
+    toast("위로 이동할 행을 선택하세요. (맨 위는 이동 불가)", false);
+    return;
+  }
+  selected.parentNode.insertBefore(selected, selected.previousElementSibling);
+  renumberMatRows();
+}
+
+function matMoveDown() {
+  const tbody = document.getElementById("mat-tbody");
+  const selected = tbody.querySelector("tr[data-selected]");
+  if (!selected || !selected.nextElementSibling) {
+    toast("아래로 이동할 행을 선택하세요. (맨 아래는 이동 불가)", false);
+    return;
+  }
+  selected.parentNode.insertBefore(selected.nextElementSibling, selected);
+  renumberMatRows();
+}
+
 async function runMaterials() {
   const fileEl = document.getElementById("mat-template");
   const logEl = document.getElementById("mat-log");
@@ -3385,6 +3431,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("mat-add-row").addEventListener("click", matAddRow);
   document.getElementById("mat-del-row").addEventListener("click", matDelSelectedRow);
+  document.getElementById("mat-dup-row").addEventListener("click", matDupRow);
+  document.getElementById("mat-up-row").addEventListener("click", matMoveUp);
+  document.getElementById("mat-down-row").addEventListener("click", matMoveDown);
   document.getElementById("mat-copy")?.addEventListener("click", () => {
     const table = document.getElementById("mat-table");
     if (!table) return;
