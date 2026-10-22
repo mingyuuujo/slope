@@ -72,6 +72,25 @@ table.data-table thead th { padding: 12px 8px; font-size: 12px; background: var(
 table.data-table tbody td { padding: 7px 6px; }
 table.data-table tbody tr:hover { background: var(--accent-soft); }
 #mat-table { min-width: 1400px; }
+.rv-style-settings { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+.rv-settings-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; font-size: 13px; font-weight: 650; }
+.rv-settings-heading > span { font-size: 9px; letter-spacing: 1.5px; color: var(--dim); font-weight: 500; }
+.rv-settings-grid { display: grid; grid-template-columns: 1fr 1.1fr 1fr; gap: 14px; }
+.rv-settings-card { min-width: 0; padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); }
+.rv-settings-card h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; font-size: 13px; font-weight: 650; }
+.rv-settings-card h3 > span { color: var(--accent-text); font-size: 10px; letter-spacing: 1px; }
+.rv-settings-card .rv-style-row { display: flex; min-height: 38px; gap: 8px; margin: 0; }
+.rv-settings-card .rv-style-row + .rv-style-row { margin-top: 8px; }
+.rv-settings-card .rv-style-label { width: 108px; font-size: 12px; line-height: 1.5; }
+.rv-settings-card .rv-slider { min-width: 40px; width: 0; }
+.rv-settings-card .rv-style-val { min-width: 30px; font-size: 12px; color: var(--accent-text); }
+.rv-settings-card .rv-style-unit { width: 16px; }
+.rv-settings-card .rv-setting-color { justify-content: space-between; }
+.rv-settings-card .rv-color-inp { width: 52px; height: 30px; padding: 3px; border-radius: 6px; background: var(--surface); }
+.rv-settings-card .rv-align-btn { min-height: 30px; padding: 5px 10px; }
+.rv-settings-card input[type="checkbox"] { accent-color: var(--accent); }
+@media (max-width: 1250px) { .rv-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rv-settings-card:last-child { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; } .rv-settings-card:last-child h3 { grid-column: 1 / -1; } }
+@media (max-width: 1000px) { .rv-settings-grid { grid-template-columns: 1fr; } .rv-settings-card:last-child { display: block; } .rv-settings-heading > span { display: none; } }
 .log-box { min-height: 80px; border-radius: 5px; line-height: 1.7; }
 .sidebar { order: 3; width: 260px; padding: 20px 16px; background: var(--surface); border-right: 0; border-left: 1px solid var(--border); }
 .sidebar[hidden] { display: none; }
