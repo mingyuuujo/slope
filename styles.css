@@ -97,15 +97,20 @@
   box-sizing: border-box;
 }
 
-html,
+html {
+  height: 100%;
+}
+
 body {
   margin: 0;
-  min-height: 100%;
+  height: 100%;
   font-family: "Pretendard", "Segoe UI", system-ui, sans-serif;
   font-size: 13px;
   color: var(--text);
   background: var(--bg);
   transition: background-color 0.2s ease, color 0.2s ease;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-header {
@@ -259,13 +264,16 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 main.shell {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-height: calc(100vh - 120px);
+  min-height: 0;
 }
 
 .group {
@@ -2197,21 +2205,33 @@ table.data-table td.readonly-cell input {
 .ecc-export-btn svg { flex-shrink: 0; }
 
 /* 결과 테이블 */
-.ecc-result-card { overflow-x: auto; }
+.ecc-result-card {
+  max-height: none;
+  overflow-y: visible;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+}
 .ecc-result-wrap {
   overflow-x: auto;
+  overflow-y: auto;
   display: block;
   min-width: 0;
+  max-height: none;
+  flex: 1;
+  min-height: 0;
 }
 .ecc-result-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
-  min-width: 900px;
+  font-size: 11px;
+  min-width: min(100%, 1000px);
 }
 .ecc-result-table th,
 .ecc-result-table td {
-  padding: 4px 12px;
+  padding: 3px 10px;
   border: 1px solid var(--border);
   text-align: center;
   white-space: nowrap;
@@ -2219,7 +2239,8 @@ table.data-table td.readonly-cell input {
 .ecc-th-label {
   background: var(--surface2);
   text-align: left;
-  width: 40%;
+  min-width: 140px;
+  width: 140px;
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -2227,13 +2248,15 @@ table.data-table td.readonly-cell input {
   background: rgba(61, 168, 124, 0.15);
   color: #3da87c;
   font-weight: 700;
-  min-width: 110px;
+  min-width: 100px;
+  width: 100px;
 }
 .ecc-th-seismic {
   background: rgba(200, 150, 58, 0.15);
   color: #c8963c;
   font-weight: 700;
-  min-width: 110px;
+  min-width: 100px;
+  width: 100px;
 }
 .ecc-row-label {
   text-align: left;
