@@ -8,12 +8,13 @@ import { patchMaterialValues, MATERIAL_FIELDS } from "./material-patch.js";
 import { applyCaseToAnalysis, listAnalyses } from "./case-template.js";
 import { loadTemplates, toTemplate } from "./case-ui.js";
 import { setBatchRun } from "./batch-dashboard.js";
+import { applyDxfToGsz } from "./dxf-mapping.js";
 
 const CONN_KEY = "slope.pipeline.conn";
 const RULES_KEY = "slope.pipeline.rules";
 const $ = (id) => document.getElementById(id);
 
-const state = { files: [], library: null, running: false };
+const state = { files: [], library: null, dxf: null, running: false };
 
 function readStore(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
@@ -112,8 +113,20 @@ async function run() {
 
     for (const [i, f] of state.files.entries()) {
       log(`[${i + 1}/${state.files.length}] ${f.name}`);
-      const doc = f.doc.cloneNode(true);
+      let file = f;
       let touched = false;
+
+      if (state.dxf) {
+        try {
+          file = await applyDxfToGsz(f, state.dxf.text);
+          log(`    DXF 적용: 기하 교체 완료`);
+          touched = true;
+        } catch (err) {
+          log(`    ⚠ DXF 적용 실패: ${err.message}`);
+        }
+      }
+
+      const doc = file.doc.cloneNode(true);
 
       if (Object.keys(changes).length) {
         const r = patchMaterialValues(doc, changes);
@@ -130,9 +143,9 @@ async function run() {
         log(`    케이스: ${n}개 해석에 적용`);
         touched ||= n > 0;
       }
-      if (touched) f.zip.file(f.xmlName, serializeXmlDocument(doc));
-      const blob = await zipToBlob(f.zip);
-      saveZip?.file(f.name, blob);
+      if (touched) file.zip.file(file.xmlName, serializeXmlDocument(doc));
+      const blob = await zipToBlob(file.zip);
+      saveZip?.file(file.name, blob);
 
       log("    해석 중...");
       const entry = await api(`/solve?file=${encodeURIComponent(f.name)}`, { method: "POST", body: blob });
@@ -177,6 +190,15 @@ export function initPipeline() {
       try { state.files.push(await loadGsz(file)); } catch (err) { log(`❌ ${file.name}: ${err.message}`); }
     }
     $("pl-file-info").textContent = state.files.length ? `${state.files.length}개 선택됨` : "";
+  });
+  $("pl-dxf").addEventListener("change", async (e) => {
+    const f = e.target.files?.[0];
+    state.dxf = null;
+    if (!f) return;
+    try {
+      state.dxf = { name: f.name, text: await f.text() };
+      $("pl-dxf-info").textContent = `${f.name} 준비됨`;
+    } catch (err) { $("pl-dxf-info").textContent = `❌ ${err.message}`; }
   });
   $("pl-lib").addEventListener("change", async (e) => {
     const f = e.target.files?.[0];
