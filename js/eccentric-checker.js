@@ -94,7 +94,14 @@
       Mv_e: getVal("ecc-tab-Mve"),
       Mh_e: getVal("ecc-tab-Mhe"),
     };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const valid = Object.values(data).every(v => isFinite(v));
+    if (!valid) {
+      alert("모든 입력값을 확인해주세요.");
+      return;
+    }
+    const json = JSON.stringify(data, null, 2);
+    console.log("저장 데이터:", data);
+    const blob = new Blob([json], { type: "application/json" });
     const url  = URL.createObjectURL(blob);
     const a    = Object.assign(document.createElement("a"), { href: url, download: "편심지지력_기초조건.json" });
     a.click();

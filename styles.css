@@ -2197,15 +2197,21 @@ table.data-table td.readonly-cell input {
 .ecc-export-btn svg { flex-shrink: 0; }
 
 /* 결과 테이블 */
-.ecc-result-wrap { overflow-x: auto; }
+.ecc-result-card { overflow-x: auto; }
+.ecc-result-wrap {
+  overflow-x: auto;
+  display: block;
+  min-width: 0;
+}
 .ecc-result-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12px;
+  min-width: 900px;
 }
 .ecc-result-table th,
 .ecc-result-table td {
-  padding: 6px 16px;
+  padding: 4px 12px;
   border: 1px solid var(--border);
   text-align: center;
   white-space: nowrap;
