@@ -20,28 +20,41 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="workspace.css" />
 </head>
 <body>
   <header class="app-header">
-    <div>
-      <h1>SLOPE/W 자동화 도구</h1>
-      <p class="sub">
-        사용 순서 &nbsp;:&nbsp; 1. 물성치 입력 &nbsp;→&nbsp; 2. Region 매핑 &nbsp;→&nbsp; 3. GSZ 편집 &nbsp;→&nbsp; 4. 결과 뷰어 &nbsp;&nbsp;·&nbsp;&nbsp; 편심 지지력 검토는 독립 탭
-      </p>
-    </div>
+    <div class="brand"><span class="brand-mark" aria-hidden="true">∠</span><div><h1>SLOPE<span> ENGINEERING</span></h1><p class="sub">지반 해석 · 설계 워크스페이스</p></div></div>
     <div class="header-actions">
       <button type="button" class="theme-toggle" id="theme-toggle" aria-label="테마 전환" title="라이트/다크 모드 전환">
         <span class="theme-toggle-icon theme-icon-light" aria-hidden="true">☀</span>
         <span class="theme-toggle-icon theme-icon-dark" aria-hidden="true">☾</span>
         <span class="theme-toggle-label" id="theme-toggle-label">라이트</span>
       </button>
-      <span class="badge">정적</span>
+      <button type="button" class="btn" id="workspace-resources" aria-expanded="false" aria-controls="project-resources">프로젝트 · 라이브러리</button>
     </div>
   </header>
 
   <div class="app-layout">
+    <nav class="tabs" role="tablist" aria-label="작업 탐색" aria-orientation="vertical">
+<div class="nav-caption">WORKSPACE</div>
+<div class="nav-group-label" role="presentation">모델 준비</div>
+<button type="button" class="tab-btn active" data-tab="materials" role="tab">물성치 입력</button>
+<button type="button" class="tab-btn" data-tab="mapping" role="tab">Region 매핑</button>
+<button type="button" class="tab-btn" data-tab="gsz-edit" role="tab">GSZ 파라미터 편집</button>
+<button type="button" class="tab-btn" data-tab="dxf-convert" role="tab">DXF → GeoStudio</button>
+<div class="nav-group-label" role="presentation">해석 · 검토</div>
+<button type="button" class="tab-btn" data-tab="eccentric" role="tab">편심 지지력 검토</button>
+<button type="button" class="tab-btn" data-tab="result" role="tab">결과 뷰어</button>
+<div class="nav-group-label" role="presentation">일괄 작업</div>
+<button type="button" class="tab-btn" data-tab="pipeline" role="tab">자동 실행</button>
+<button type="button" class="tab-btn" data-tab="batch-mat" role="tab">일괄 물성 적용</button>
+<button type="button" class="tab-btn" data-tab="batch-case" role="tab">케이스 템플릿</button>
+<button type="button" class="tab-btn" data-tab="batch" role="tab">배치 결과</button>
+</nav>
     <!-- 좌측 사이드바: 프로젝트 관리 + 라이브러리 -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="project-resources" aria-label="프로젝트 및 물성 라이브러리" hidden>
+      <div class="resources-heading">프로젝트 탐색기<button type="button" id="resources-close" aria-label="프로젝트 탐색기 닫기">×</button></div>
       <div class="sidebar-section">
         <div class="sidebar-title">📁 프로젝트</div>
         <div class="project-controls">
@@ -82,19 +95,7 @@
 
     <!-- 메인 콘텐츠 -->
     <div class="main-content">
-  <nav class="tabs" role="tablist">
-    <button type="button" class="tab-btn active" data-tab="materials" role="tab">물성치 입력</button>
-    <button type="button" class="tab-btn" data-tab="mapping" role="tab">Region 매핑</button>
-    <button type="button" class="tab-btn" data-tab="gsz-edit" role="tab">GSZ 파라미터 편집</button>
-    <button type="button" class="tab-btn" data-tab="result" role="tab">결과 뷰어</button>
-    <button type="button" class="tab-btn" data-tab="eccentric" role="tab">편심 지지력 검토</button>
-    <button type="button" class="tab-btn" data-tab="dxf-convert" role="tab">DXF → GeoStudio</button>
-    <button type="button" class="tab-btn" data-tab="pipeline" role="tab">자동 실행</button>
-    <button type="button" class="tab-btn" data-tab="batch-mat" role="tab">일괄 물성 적용</button>
-    <button type="button" class="tab-btn" data-tab="batch-case" role="tab">케이스 템플릿</button>
-    <button type="button" class="tab-btn" data-tab="batch" role="tab">배치 결과</button>
-  </nav>
-
+  <div class="workspace-heading"><div><div class="workspace-breadcrumb" id="workspace-breadcrumb">워크스페이스 / 모델 준비</div><h2 id="workspace-title">물성치 입력</h2><p id="workspace-description">지반 재료와 강도 모델을 정의하고 GSZ 파일에 적용합니다.</p></div><span class="workspace-tag">ENGINEERING WORKSPACE</span></div>
   <main class="shell">
     <section id="panel-materials" class="panel active" role="tabpanel">
       <div class="group">
@@ -1470,17 +1471,13 @@
     </div>
   </div>
 
-  <footer class="footer-note">
-    Vercel 등 정적 호스팅에 이 폴더(<code>slope/web</code>)를 그대로 올리면 됩니다.
-    JSZip·dxf-parser는 <code>vendor/</code>에 포함되어 있어 CDN 없이 동작합니다.
-    로컬에서 파일을 직접 열면(<code>file://</code>) 모듈/CORS 제한으로 동작하지 않을 수 있으니
-    <code>npx serve .</code> 로 같은 폴더를 띄워 테스트하세요.
-  </footer>
+  <footer class="footer-note"><span><span class="status-dot"></span> SLOPE ENGINEERING</span><span id="workspace-status">물성치 입력</span><span>단위계 · kN / m</span></footer>
 
   <script src="vendor/jszip.min.js"></script>
   <script src="vendor/dxf-parser.js"></script>
   <script src="vendor/exceljs.min.js"></script>
   <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/workspace.js"></script>
   <script src="js/eccentric-checker.js"></script>
 </body>
 </html>
