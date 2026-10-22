@@ -210,4 +210,17 @@ export function initPipeline() {
     } catch (err) { $("pl-lib-info").textContent = `❌ ${err.message}`; }
   });
   $("pl-run").addEventListener("click", run);
+
+  // 물성치 표에 드래그앤드롭 추가
+  const matTbody = document.getElementById("mat-tbody");
+  if (matTbody) {
+    matTbody.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      matTbody.style.background = "var(--accent-soft)";
+    });
+    matTbody.addEventListener("dragleave", () => {
+      matTbody.style.background = "";
+    });
+  }
 }

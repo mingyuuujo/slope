@@ -3,6 +3,7 @@
  * JSZip · dxf-parser 는 index.html에서 vendor 스크립트로 선로드됩니다.
  */
 
+import { Project, getProjectList, saveProjectToStorage, loadProjectFromStorage, deleteProjectFromStorage } from "./project-manager.js";
 import { applyMaterialsToDocument } from "./materials.js";
 import { initGszEditor } from "./gsz-editor.js";
 import { initResultViewer } from "./result-viewer.js";
@@ -3243,6 +3244,133 @@ function applyTheme(theme) {
   redrawMapDxfPreview();
 }
 
+// 전역 프로젝트 상태
+let currentProject = new Project("새 프로젝트");
+
+function setupProject() {
+  // 프로젝트 관리 버튼
+  document.getElementById("proj-new")?.addEventListener("click", () => {
+    currentProject = new Project("새 프로젝트");
+    updateProjectUI();
+    toast("새 프로젝트가 생성되었습니다.");
+  });
+
+  document.getElementById("proj-open")?.addEventListener("click", () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".slope,application/json";
+    input.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          currentProject = Project.fromJSON(ev.target.result);
+          updateProjectUI();
+          loadProjectToUI();
+          toast(`'${currentProject.name}' 프로젝트가 열렸습니다.`);
+        } catch (err) {
+          toast(`파일 로드 실패: ${err.message}`, false);
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  });
+
+  document.getElementById("proj-save")?.addEventListener("click", () => {
+    currentProject.download(`${currentProject.name}.slope`);
+    toast(`'${currentProject.name}' 저장됨`);
+  });
+
+  // 라이브러리 import
+  document.getElementById("lib-import")?.addEventListener("click", () => {
+    document.getElementById("lib-import-file")?.click();
+  });
+
+  document.getElementById("lib-import-file")?.addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const lib = JSON.parse(ev.target.result);
+        if (!lib.materials) throw new Error("유효한 라이브러리 아님");
+        // 라이브러리의 물성들을 currentProject에 추가
+        Object.entries(lib.materials).forEach(([name, values]) => {
+          const id = Object.keys(currentProject.materials).length + 1;
+          currentProject.addMaterial(id, name, values.model || "MohrCoulomb", values);
+        });
+        updateLibraryUI();
+        toast(`라이브러리 로드됨 (${Object.keys(lib.materials).length}종)`);
+      } catch (err) {
+        toast(`라이브러리 로드 실패: ${err.message}`, false);
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  updateProjectUI();
+}
+
+function updateProjectUI() {
+  const nameEl = document.getElementById("proj-name");
+  const infoEl = document.getElementById("proj-info");
+  if (nameEl) nameEl.textContent = currentProject.name;
+  if (infoEl) {
+    const matCount = Object.keys(currentProject.materials).length;
+    const tplCount = currentProject.templates.length;
+    infoEl.innerHTML = `재료: ${matCount}<br>템플릿: ${tplCount}`;
+  }
+  updateLibraryUI();
+}
+
+function updateLibraryUI() {
+  const panel = document.getElementById("lib-panel");
+  if (!panel) return;
+  panel.innerHTML = "";
+  Object.entries(currentProject.materials).forEach(([id, mat]) => {
+    const div = document.createElement("div");
+    div.className = "lib-item";
+    div.draggable = true;
+    div.innerHTML = `
+      <div class="lib-item-name">${mat.name}</div>
+      <div class="lib-item-values">${mat.model}: uw=${mat.uw}, phi=${mat.phi}</div>
+    `;
+    div.addEventListener("dragstart", (e) => {
+      e.dataTransfer.effectAllowed = "copy";
+      e.dataTransfer.setData("application/json", JSON.stringify({ id, ...mat }));
+    });
+    panel.appendChild(div);
+  });
+}
+
+function loadProjectToUI() {
+  // 프로젝트에서 물성 로드해 테이블에 표시
+  const tbody = document.getElementById("mat-tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  Object.entries(currentProject.materials).forEach(([id, mat]) => {
+    const tr = createMatRow({
+      id,
+      name: mat.name,
+      model: mat.model || "MohrCoulomb",
+      uw: mat.uw || "",
+      dw: mat.dw || "",
+      c: mat.c || "",
+      phi: mat.phi || "",
+      c_top: mat.c_top || "",
+      c_rate: mat.c_rate || "",
+      c_datum: mat.c_datum || "",
+      datum_elev: mat.datum_elev || "",
+      color: mat.color || "",
+    });
+    tbody.appendChild(tr);
+    applyRowEditPolicy(tr);
+  });
+  renumberMatRows();
+}
+
 function setupTheme() {
   applyTheme(getPreferredTheme());
   document.getElementById("theme-toggle")?.addEventListener("click", () => {
@@ -3269,6 +3397,7 @@ function setupTabs() {
 
 document.addEventListener("DOMContentLoaded", () => {
   setupTheme();
+  setupProject();
   setupTabs();
   setupMapPreviewResize();
   bindWaterTableUI();

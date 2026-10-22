@@ -39,6 +39,49 @@
     </div>
   </header>
 
+  <div class="app-layout">
+    <!-- 좌측 사이드바: 프로젝트 관리 + 라이브러리 -->
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-title">📁 프로젝트</div>
+        <div class="project-controls">
+          <button type="button" class="btn btn-sm" id="proj-new" title="새 프로젝트">새로</button>
+          <button type="button" class="btn btn-sm" id="proj-open" title="프로젝트 열기">열기</button>
+          <button type="button" class="btn btn-sm" id="proj-save" title="프로젝트 저장">저장</button>
+        </div>
+        <div id="proj-name" class="project-name">새 프로젝트</div>
+      </div>
+
+      <div class="sidebar-divider"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-title">📚 물성 라이브러리</div>
+        <input type="text" id="lib-search" class="lib-search" placeholder="검색..." />
+        <div id="lib-panel" class="lib-panel">
+          <!-- 라이브러리 아이템들 (JavaScript에서 생성) -->
+        </div>
+        <button type="button" class="btn btn-sm" id="lib-import" style="width:100%; margin-top:8px;">
+          JSON 불러오기
+        </button>
+        <input type="file" id="lib-import-file" accept=".json" style="display:none;" />
+      </div>
+
+      <div class="sidebar-divider"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-title">⚙️ 설정</div>
+        <label class="checkbox-label">
+          <input type="checkbox" id="auto-save" checked />
+          자동 저장
+        </label>
+        <div style="font-size:0.85em; color:#999; margin-top:8px;">
+          <div id="proj-info"></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 메인 콘텐츠 -->
+    <div class="main-content">
   <nav class="tabs" role="tablist">
     <button type="button" class="tab-btn active" data-tab="materials" role="tab">물성치 입력</button>
     <button type="button" class="tab-btn" data-tab="mapping" role="tab">Region 매핑</button>
@@ -1424,6 +1467,8 @@
     </section>
 
   </main>
+    </div>
+  </div>
 
   <footer class="footer-note">
     Vercel 등 정적 호스팅에 이 폴더(<code>slope/web</code>)를 그대로 올리면 됩니다.

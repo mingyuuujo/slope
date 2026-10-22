@@ -2396,3 +2396,164 @@ table.data-table td.readonly-cell input {
 /* 케이스 템플릿 */
 #ct-table td.num { text-align: right; }
 #panel-batch-case textarea { font-family: inherit; }
+
+/* ──────────────────────────────────────────────────── */
+/* 프로젝트 관리 + 라이브러리 사이드바 */
+/* ──────────────────────────────────────────────────── */
+
+html, body { height: 100%; }
+body { display: flex; flex-direction: column; }
+
+.app-header { flex-shrink: 0; }
+
+.app-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 220px;
+  background: var(--surface2);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding: 12px;
+}
+
+.sidebar-section {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+}
+
+.sidebar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--group-title);
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.project-controls {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.project-controls .btn-sm,
+.btn-sm {
+  padding: 4px 8px;
+  font-size: 11px;
+  border: 1px solid var(--btn-border);
+  background: var(--surface);
+  color: var(--btn-text);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-sm:hover {
+  background: var(--btn-hover-bg);
+}
+
+.project-name {
+  padding: 6px;
+  background: var(--surface-alt);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text);
+  word-break: break-word;
+  border: 1px solid var(--border);
+}
+
+.sidebar-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 12px 0;
+}
+
+.lib-search {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.lib-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.lib-item {
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: move;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+}
+
+.lib-item:hover {
+  background: var(--btn-hover-bg);
+  border-color: var(--accent);
+}
+
+.lib-item-name {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.lib-item-values {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.checkbox-label input {
+  cursor: pointer;
+}
+
+#proj-info {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.main-content .tabs {
+  flex-shrink: 0;
+}
+
+.main-content .shell {
+  flex: 1;
+  overflow: auto;
+}
