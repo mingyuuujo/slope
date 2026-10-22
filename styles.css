@@ -111,6 +111,7 @@ body {
   transition: background-color 0.2s ease, color 0.2s ease;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .app-header {
