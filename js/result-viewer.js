@@ -474,8 +474,8 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
     const xSpan = pl.x2 - pl.x1 || 1;
     const cx1m  = Math.max(gMinX, Math.min(gMaxX, pl.x1));
     const cx2m  = Math.max(gMinX, Math.min(gMaxX, pl.x2));
-    const cy1m  = pl.y1 + (cx1m - pl.x1) / xSpan * (pl.y2 - pl.y1) - 1;
-    const cy2m  = pl.y1 + (cx2m - pl.x1) / xSpan * (pl.y2 - pl.y1) - 1;
+    const cy1m  = pl.y1 + (cx1m - pl.x1) / xSpan * (pl.y2 - pl.y1);
+    const cy2m  = pl.y1 + (cx2m - pl.x1) / xSpan * (pl.y2 - pl.y1);
 
     const [cx1, cy1] = toC(cx1m, cy1m);
     const [cx2, cy2] = toC(cx2m, cy2m);
@@ -486,34 +486,54 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
     ctx.fillStyle   = loadColor;
     ctx.setLineDash([]);
 
-    // 상단 베이스선: 지형면과 평행하게 ARROW_H_PX 위에
-    ctx.lineWidth = 1.5;
+    const height = 80;
+    const left = Math.min(cx1, cx2), right = Math.max(cx1, cx2);
+    const top = Math.min(cy1, cy2) - height;
+    const bottom = Math.max(cy1, cy2);
+    const extent = bottom - top;
+    ctx.save();
     ctx.beginPath();
-    ctx.moveTo(cx1, cy1 - ARROW_H_PX);
-    ctx.lineTo(cx2, cy2 - ARROW_H_PX);
+    ctx.moveTo(cx1, cy1 - height);
+    ctx.lineTo(cx2, cy2 - height);
+    ctx.lineTo(cx2, cy2);
+    ctx.lineTo(cx1, cy1);
+    ctx.closePath();
+    ctx.clip();
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    for (let x = left - extent; x <= right + extent; x += 6) {
+      ctx.moveTo(x, top);
+      ctx.lineTo(x + extent, bottom);
+      ctx.moveTo(x, top);
+      ctx.lineTo(x - extent, bottom);
+    }
     ctx.stroke();
-
-    // 화살표: 각 위치의 보간된 지형면 y에 화살촉이 정확히 닿음
-    const nArrows = Math.max(2, Math.round(spanPx / 5) + 1);
+    ctx.restore();
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx1, cy1);
+    ctx.lineTo(cx1, cy1 - height);
+    ctx.lineTo(cx2, cy2 - height);
+    ctx.lineTo(cx2, cy2);
+    ctx.stroke();
+    ctx.fillRect(cx1 - 2.5, cy1 - height - 2.5, 5, 5);
+    ctx.fillRect(cx2 - 2.5, cy2 - height - 2.5, 5, 5);
+    const nArrows = Math.max(2, Math.ceil(spanPx / 40) + 1);
     for (let i = 0; i < nArrows; i++) {
-      const t     = (nArrows > 1) ? i / (nArrows - 1) : 0;
-      const ax    = cx1 + t * (cx2 - cx1);
+      const t = i / (nArrows - 1);
+      const ax = cx1 + t * (cx2 - cx1);
       const faceY = cy1 + t * (cy2 - cy1);
-
-      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(ax, faceY - ARROW_H_PX);
-      ctx.lineTo(ax, faceY - HEAD_H);
+      ctx.moveTo(ax, faceY - 22);
+      ctx.lineTo(ax, faceY - 11);
       ctx.stroke();
-
       ctx.beginPath();
-      ctx.moveTo(ax,          faceY);
-      ctx.lineTo(ax - HEAD_W, faceY - HEAD_H);
-      ctx.lineTo(ax + HEAD_W, faceY - HEAD_H);
+      ctx.moveTo(ax, faceY);
+      ctx.lineTo(ax - 4, faceY - 11);
+      ctx.lineTo(ax + 4, faceY - 11);
       ctx.closePath();
       ctx.fill();
     }
-
   }
 
   // ── LineLoad (집중 선하중, direction 기반 방향) ───────────
@@ -602,7 +622,7 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
   const gW = gMaxX - gMinX || 1;
   const gH = gMaxY - gMinY || 1;
 
-  const topPx  = 56;
+  const topPx  = surchargeLoads?.pressureLines?.length ? 104 : 56;
   const hPad   = opts.forExcel ? 0 : 14;   // Excel: 좌우 여백 없음
   const btmPad = opts.forExcel ? 0 : 12;   // Excel: 하부 여백 없음
 
