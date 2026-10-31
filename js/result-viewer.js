@@ -457,7 +457,7 @@ function drawWaterSurface(ctx, piezoLines, toC, gMinX, gMaxX, isDark) {
 }
 
 // ─── 상재하중 렌더 ────────────────────────────────────────────
-function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX, gMaxX) {
+function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX, gMaxX, surfaceRegions) {
   if (!surchargeLoads) return;
   const { pressureLines, lineLoads } = surchargeLoads;
 
@@ -469,6 +469,20 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
   ctx.save();
 
   // ── PressureLine (분포 상재하중) ──────────────────────────
+  const surfaceY = (x, fallback) => {
+    let y = -Infinity;
+    for (const { coords } of surfaceRegions) {
+      for (let i = 0; i < coords.length; i++) {
+        const a = coords[i], b = coords[(i + 1) % coords.length];
+        if (x < Math.min(a.x, b.x) - 1e-8 || x > Math.max(a.x, b.x) + 1e-8) continue;
+        const dx = b.x - a.x;
+        const hit = Math.abs(dx) < 1e-8 ? Math.max(a.y, b.y)
+          : a.y + Math.max(0, Math.min(1, (x - a.x) / dx)) * (b.y - a.y);
+        y = Math.max(y, hit);
+      }
+    }
+    return Number.isFinite(y) ? y : fallback;
+  };
   for (const pl of pressureLines) {
     // X 범위를 리즌 bounds로 클램프, y는 선형 보간
     const xSpan = pl.x2 - pl.x1 || 1;
@@ -477,8 +491,8 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
     const cy1m  = pl.y1 + (cx1m - pl.x1) / xSpan * (pl.y2 - pl.y1);
     const cy2m  = pl.y1 + (cx2m - pl.x1) / xSpan * (pl.y2 - pl.y1);
 
-    const [cx1, cy1] = toC(cx1m, cy1m);
-    const [cx2, cy2] = toC(cx2m, cy2m);
+    const [cx1, cy1] = toC(cx1m, surfaceY(cx1m, cy1m));
+    const [cx2, cy2] = toC(cx2m, surfaceY(cx2m, cy2m));
     const spanPx = Math.abs(cx2 - cx1);
     if (spanPx < 1) continue;
 
@@ -486,17 +500,23 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
     ctx.fillStyle   = loadColor;
     ctx.setLineDash([]);
 
-    const height = Math.max(20, Math.min(36, spanPx * 0.35));
+    const height = 14;
+    const base = [];
+    const steps = Math.max(1, Math.ceil(spanPx / 2));
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const x = cx1m + t * (cx2m - cx1m);
+      base.push(toC(x, surfaceY(x, cy1m + t * (cy2m - cy1m))));
+    }
     const left = Math.min(cx1, cx2), right = Math.max(cx1, cx2);
-    const top = Math.min(cy1, cy2) - height;
-    const bottom = Math.max(cy1, cy2);
+    const top = Math.min(...base.map(p => p[1])) - height;
+    const bottom = Math.max(...base.map(p => p[1]));
     const extent = bottom - top;
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(cx1, cy1 - height);
-    ctx.lineTo(cx2, cy2 - height);
-    ctx.lineTo(cx2, cy2);
-    ctx.lineTo(cx1, cy1);
+    for (const [x, y] of base) ctx.lineTo(x, y - height);
+    for (let i = base.length - 1; i >= 0; i--) ctx.lineTo(...base[i]);
     ctx.closePath();
     ctx.clip();
     ctx.lineWidth = 0.6;
@@ -513,7 +533,7 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
     ctx.beginPath();
     ctx.moveTo(cx1, cy1);
     ctx.lineTo(cx1, cy1 - height);
-    ctx.lineTo(cx2, cy2 - height);
+    for (const [x, y] of base) ctx.lineTo(x, y - height);
     ctx.lineTo(cx2, cy2);
     ctx.stroke();
     ctx.fillRect(cx1 - 2.5, cy1 - height - 2.5, 5, 5);
@@ -522,7 +542,8 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
     for (let i = 0; i < nArrows; i++) {
       const t = i / (nArrows - 1);
       const ax = cx1 + t * (cx2 - cx1);
-      const faceY = cy1 + t * (cy2 - cy1);
+      const x = cx1m + t * (cx2m - cx1m);
+      const faceY = toC(x, surfaceY(x, cy1m + t * (cy2m - cy1m)))[1];
       ctx.beginPath();
       ctx.moveTo(ax, faceY - 14);
       ctx.lineTo(ax, faceY - 7);
@@ -686,7 +707,7 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
   drawWaterSurface(ctx, piezoLines, toC, gMinX, gMaxX, isDark);
 
   // 상재하중
-  drawSurchargeLoads(ctx, surchargeLoads, toC, topPx, H, isDark, gMinX, gMaxX);
+  drawSurchargeLoads(ctx, surchargeLoads, toC, topPx, H, isDark, gMinX, gMaxX, assignedRegions);
 
   // 파괴원호 + FOS 텍스트
   if (slip && (slip.profile?.length >= 2 || Number.isFinite(slip.centerX))) {
