@@ -486,7 +486,7 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
     ctx.fillStyle   = loadColor;
     ctx.setLineDash([]);
 
-    const height = 80;
+    const height = Math.max(20, Math.min(36, spanPx * 0.35));
     const left = Math.min(cx1, cx2), right = Math.max(cx1, cx2);
     const top = Math.min(cy1, cy2) - height;
     const bottom = Math.max(cy1, cy2);
@@ -524,13 +524,13 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
       const ax = cx1 + t * (cx2 - cx1);
       const faceY = cy1 + t * (cy2 - cy1);
       ctx.beginPath();
-      ctx.moveTo(ax, faceY - 22);
-      ctx.lineTo(ax, faceY - 11);
+      ctx.moveTo(ax, faceY - 14);
+      ctx.lineTo(ax, faceY - 7);
       ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(ax, faceY);
-      ctx.lineTo(ax - 4, faceY - 11);
-      ctx.lineTo(ax + 4, faceY - 11);
+      ctx.lineTo(ax - 2.5, faceY - 7);
+      ctx.lineTo(ax + 2.5, faceY - 7);
       ctx.closePath();
       ctx.fill();
     }
@@ -622,7 +622,7 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
   const gW = gMaxX - gMinX || 1;
   const gH = gMaxY - gMinY || 1;
 
-  const topPx  = surchargeLoads?.pressureLines?.length ? 104 : 56;
+  const topPx  = 56;
   const hPad   = opts.forExcel ? 0 : 14;   // Excel: 좌우 여백 없음
   const btmPad = opts.forExcel ? 0 : 12;   // Excel: 하부 여백 없음
 
