@@ -500,7 +500,7 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
     ctx.fillStyle   = loadColor;
     ctx.setLineDash([]);
 
-    const height = 14;
+    const height = 7;
     const base = [];
     const steps = Math.max(1, Math.ceil(spanPx / 2));
     for (let i = 0; i <= steps; i++) {
@@ -536,8 +536,8 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
     for (const [x, y] of base) ctx.lineTo(x, y - height);
     ctx.lineTo(cx2, cy2);
     ctx.stroke();
-    ctx.fillRect(cx1 - 2.5, cy1 - height - 2.5, 5, 5);
-    ctx.fillRect(cx2 - 2.5, cy2 - height - 2.5, 5, 5);
+    ctx.fillRect(cx1 - 1.5, cy1 - height - 1.5, 3, 3);
+    ctx.fillRect(cx2 - 1.5, cy2 - height - 1.5, 3, 3);
     const nArrows = Math.max(2, Math.ceil(spanPx / 40) + 1);
     for (let i = 0; i < nArrows; i++) {
       const t = i / (nArrows - 1);
@@ -545,13 +545,13 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
       const x = cx1m + t * (cx2m - cx1m);
       const faceY = toC(x, surfaceY(x, cy1m + t * (cy2m - cy1m)))[1];
       ctx.beginPath();
-      ctx.moveTo(ax, faceY - 14);
-      ctx.lineTo(ax, faceY - 7);
+      ctx.moveTo(ax, faceY - 7);
+      ctx.lineTo(ax, faceY - 3.5);
       ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(ax, faceY);
-      ctx.lineTo(ax - 2.5, faceY - 7);
-      ctx.lineTo(ax + 2.5, faceY - 7);
+      ctx.lineTo(ax - 1.5, faceY - 3.5);
+      ctx.lineTo(ax + 1.5, faceY - 3.5);
       ctx.closePath();
       ctx.fill();
     }
