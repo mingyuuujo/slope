@@ -545,13 +545,13 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
       const x = cx1m + t * (cx2m - cx1m);
       const faceY = toC(x, surfaceY(x, cy1m + t * (cy2m - cy1m)))[1];
       ctx.beginPath();
-      ctx.moveTo(ax, faceY - 7);
-      ctx.lineTo(ax, faceY - 3.5);
+      ctx.moveTo(ax, faceY - 14);
+      ctx.lineTo(ax, faceY - 7);
       ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(ax, faceY);
-      ctx.lineTo(ax - 1.5, faceY - 3.5);
-      ctx.lineTo(ax + 1.5, faceY - 3.5);
+      ctx.lineTo(ax - 2.5, faceY - 7);
+      ctx.lineTo(ax + 2.5, faceY - 7);
       ctx.closePath();
       ctx.fill();
     }
