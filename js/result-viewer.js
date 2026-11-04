@@ -607,11 +607,12 @@ function drawSurchargeLoads(ctx, surchargeLoads, toC, _topPx, _H, isDark, gMinX,
  */
 export function renderResultCanvas(canvas, regions, materials, regionMatMap, slip, surchargeLoads, piezoLines, opts = {}) {
   const W = opts.width || canvas.offsetWidth || 700;
+  const viewZoom = opts.viewZoom ?? 1;
   const ctx = canvas.getContext("2d");
 
   if (!regions.length) {
-    canvas.width  = W;
-    canvas.height = opts.height || canvas.offsetHeight || 280;
+    canvas.width  = Math.round(W * viewZoom);
+    canvas.height = Math.round((opts.height || canvas.offsetHeight || 280) * viewZoom);
     return null;
   }
 
@@ -625,8 +626,8 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
   });
 
   if (!assignedRegions.length) {
-    canvas.width  = W;
-    canvas.height = opts.height || canvas.offsetHeight || 280;
+    canvas.width  = Math.round(W * viewZoom);
+    canvas.height = Math.round((opts.height || canvas.offsetHeight || 280) * viewZoom);
     return null;
   }
 
@@ -645,7 +646,7 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
   const gW = gMaxX - gMinX || 1;
   const gH = gMaxY - gMinY || 1;
 
-  const topPx  = 56;
+  const topPx  = 96;
   const hPad   = opts.forExcel ? 0 : 14;   // Excel: 좌우 여백 없음
   const btmPad = opts.forExcel ? 0 : 12;   // Excel: 하부 여백 없음
 
@@ -657,11 +658,12 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
   // fixedHeight가 지정된 경우 해당 값으로 캔버스 높이 고정
   const H      = (opts.fixedHeight && opts.fixedHeight > 0) ? opts.fixedHeight : autoH;
 
-  canvas.width  = W;
-  canvas.height = H;
+  canvas.width  = Math.round(W * viewZoom);
+  canvas.height = Math.round(H * viewZoom);
 
   // 배경: 웹은 투명, Excel은 흰색
-  ctx.clearRect(0, 0, W, H);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (viewZoom !== 1) ctx.scale(viewZoom, viewZoom);
   if (opts.forExcel) {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, W, H);
@@ -1331,11 +1333,12 @@ function updateViewZoom() {
   const spacer = $("rv-view-spacer");
   if (!canvas || !clip || !spacer) return;
   const w = canvas.offsetWidth, h = canvas.offsetHeight;
-  spacer.style.width = `${w * rvViewZoom}px`;
-  spacer.style.height = `${h * rvViewZoom}px`;
+  const blankScale = rvRenderCache ? 1 : rvViewZoom;
+  spacer.style.width = `${w * blankScale}px`;
+  spacer.style.height = `${h * blankScale}px`;
   clip.style.width = `${w}px`;
   clip.style.height = `${h}px`;
-  clip.style.transform = `scale(${rvViewZoom})`;
+  clip.style.transform = rvRenderCache ? "" : `scale(${rvViewZoom})`;
   $("rv-zoom-pct").textContent = `${Math.round(rvViewZoom * 100)}%`;
 }
 
@@ -1348,7 +1351,8 @@ function setViewZoom(next, x, y) {
   const contentX = (viewport.scrollLeft + x - oldLeft) / old;
   const contentY = (viewport.scrollTop + y) / old;
   rvViewZoom = Math.max(0.5, Math.min(4, next));
-  updateViewZoom();
+  if (rvRenderCache) renderCached();
+  else updateViewZoom();
   const newLeft = Math.max(0, (viewport.clientWidth - spacer.offsetWidth) / 2);
   viewport.scrollLeft = contentX * rvViewZoom + newLeft - x;
   viewport.scrollTop = contentY * rvViewZoom - y;
@@ -1360,9 +1364,10 @@ function renderCached() {
   const { regionMatMap, surchargeLoads, piezoLines, slip, slipEntryExit } = rvRenderCache;
   const viewport = $("rv-view-viewport");
   const naturalW = viewport?.clientWidth || 700;
-  canvas.style.width = naturalW + "px";
+  canvas.style.width = Math.round(naturalW * rvViewZoom) + "px";
   renderResultCanvas(canvas, rvState.regions, rvState.materials, regionMatMap, slip, surchargeLoads, piezoLines,
-    { viewRegion: rvViewRegion, fixedHeight: rvFixedHeight, slipStyle: rvSlipStyleAnim, slipEntryExit });
+    { width: naturalW, viewZoom: rvViewZoom, viewRegion: rvViewRegion,
+      fixedHeight: rvFixedHeight, slipStyle: rvSlipStyleAnim, slipEntryExit });
   updateResizeOverlay();
   updateViewZoom();
 }
@@ -1445,8 +1450,8 @@ function updateResizeOverlay() {
   const shadowR = $("rv-shadow-r");
   if (!canvas || !overlay) return;
 
-  const canvasW = canvas.offsetWidth;
-  const h       = canvas.clientHeight;
+  const canvasW = canvas.offsetWidth / rvViewZoom;
+  const h       = canvas.clientHeight / rvViewZoom;
   if (canvasW <= 0 || h <= 0 || !rvState.allResults.length) {
     overlay.style.display = "none";
     if (shadowL) shadowL.style.display = "none";
@@ -1460,18 +1465,18 @@ function updateResizeOverlay() {
 
   // 오버레이: 가시 영역 위에 테두리 표시
   overlay.style.display = "";
-  overlay.style.left    = visL + "px";
+  overlay.style.left    = visL * rvViewZoom + "px";
   overlay.style.top     = "0";
-  overlay.style.width   = visW + "px";
-  overlay.style.height  = h + "px";
+  overlay.style.width   = visW * rvViewZoom + "px";
+  overlay.style.height  = h * rvViewZoom + "px";
 
   // 왼쪽 그림자
   if (shadowL) {
     if (visL > 0) {
       shadowL.style.display = "";
       shadowL.style.left    = "0";
-      shadowL.style.width   = visL + "px";
-      shadowL.style.height  = h + "px";
+      shadowL.style.width   = visL * rvViewZoom + "px";
+      shadowL.style.height  = h * rvViewZoom + "px";
     } else {
       shadowL.style.display = "none";
     }
@@ -1480,9 +1485,9 @@ function updateResizeOverlay() {
   if (shadowR) {
     if (visR < canvasW) {
       shadowR.style.display = "";
-      shadowR.style.left    = visR + "px";
-      shadowR.style.width   = (canvasW - visR) + "px";
-      shadowR.style.height  = h + "px";
+      shadowR.style.left    = visR * rvViewZoom + "px";
+      shadowR.style.width   = (canvasW - visR) * rvViewZoom + "px";
+      shadowR.style.height  = h * rvViewZoom + "px";
     } else {
       shadowR.style.display = "none";
     }
@@ -1518,11 +1523,11 @@ function initResizeHandles() {
       dragDir      = handle.dataset.dir;
       startX       = e.clientX;
       startY       = e.clientY;
-      startCanvasW = canvas.offsetWidth;
+      startCanvasW = canvas.offsetWidth / rvViewZoom;
       // startVisW = 현재 가시 너비 (오버레이 기준)
       const visR   = (rvFixedWidth && rvFixedWidth > 0) ? Math.min(rvFixedWidth, startCanvasW) : startCanvasW;
       startVisW    = visR - rvCropLeft;
-      startH       = canvas.clientHeight;
+      startH       = canvas.clientHeight / rvViewZoom;
       startCropLeft = rvCropLeft;
     });
   });
@@ -1610,7 +1615,7 @@ function renderCroppedCanvas() {
   if (!srcCanvas) return null;
 
   const { regionMatMap, surchargeLoads, piezoLines, slip, slipEntryExit } = rvRenderCache;
-  const nativeW   = srcCanvas.width;
+  const nativeW   = Math.round(srcCanvas.width / rvViewZoom);
   const pixelVisL = rvCropLeft;
   const pixelVisR = (rvFixedWidth && rvFixedWidth > 0) ? Math.min(rvFixedWidth, nativeW) : nativeW;
   const pixelVisW = Math.max(1, pixelVisR - pixelVisL);
@@ -1881,7 +1886,7 @@ async function handleExcelDownload() {
 
     // 웹 뷰의 크롭 상태를 Excel에 정비율로 반영
     const webCanvas  = $("rv-canvas");
-    const nativeW    = (webCanvas?.width) || CANVAS_W;
+    const nativeW    = webCanvas ? Math.round(webCanvas.width / rvViewZoom) : CANVAS_W;
     const pixelVisL  = rvCropLeft;
     const pixelVisR  = (rvFixedWidth && rvFixedWidth > 0) ? Math.min(rvFixedWidth, nativeW) : nativeW;
     const pixelVisW  = Math.max(1, pixelVisR - pixelVisL);

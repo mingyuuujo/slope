@@ -30,6 +30,13 @@ test("FOS marker and GeoStudio water line render in both label positions", () =>
     assert.ok(calls.findIndex((call) => call.key === "fill" && call.fill === "rgba(120,220,255,0.40)") <
       calls.findIndex((call) => call.key === "fill" && call.fill === "#cccccc"));
     assert.ok(calls.some((call) => call.key === "fillText" && call.font.includes("YDIYGO330")));
+    if (centerY === 3 && fosAlign === "left") {
+      renderResultCanvas(canvas, regions, materials, new Map([[1, 1]]), slip, null, piezoLines,
+        { width: 700, viewZoom: 2 });
+      assert.equal(canvas.width, 1400);
+      assert.equal(canvas.height, 888);
+      assert.ok(calls.some((call) => call.key === "scale" && String(call.args) === "2,2"));
+    }
   }
 });
 

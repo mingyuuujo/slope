@@ -1634,10 +1634,10 @@ table.data-table td.readonly-cell input {
    결과 뷰어 탭
 ════════════════════════════════════════════════ */
 
-/* 결과 캔버스를 전체 너비로 표시 */
+/* 결과 캔버스와 해석 정보를 8:2로 배치 */
 .rv-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 4fr) minmax(220px, 1fr);
   gap: 16px;
   align-items: start;
   margin-bottom: 4px;
@@ -1725,7 +1725,7 @@ table.data-table td.readonly-cell input {
   font-size: 11px;
 }
 .rv-view-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.rv-view-viewport { overflow: auto; max-height: 72vh; min-height: 320px; scrollbar-gutter: stable; }
+.rv-view-viewport { overflow: auto; max-height: 72vh; min-height: 240px; scrollbar-gutter: stable; }
 .rv-view-viewport[data-panning="true"] { cursor: grabbing; user-select: none; }
 .rv-view-spacer { position: relative; margin: 0 auto; overflow: hidden; }
 
@@ -2014,7 +2014,7 @@ table.data-table td.readonly-cell input {
   border-color: var(--accent);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .rv-workspace {
     grid-template-columns: 1fr;
   }
