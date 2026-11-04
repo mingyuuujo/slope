@@ -406,7 +406,7 @@ function renderRegionsViewRegion(ctx, assignedRegions, regionMatMap, matColorMap
   }
 }
 
-// ─── 수위 채색 — 리즌 그리기 전 호출 ─────────────────────────
+// ─── 수위 채색 ──────────────────────────────────────────────
 function drawWaterFill(ctx, piezoLines, toC, gMinX, gMaxX, gMinY, isDark) {
   const mainPiez = getPrimaryPiezo(piezoLines);
   if (!mainPiez) return;
@@ -420,7 +420,7 @@ function drawWaterFill(ctx, piezoLines, toC, gMinX, gMaxX, gMinY, isDark) {
   const [, bottomCy] = toC(gMinX, gMinY);  // 리즌 최저 Y — 이 아래로 채우지 않음
 
   ctx.save();
-  ctx.fillStyle = isDark ? "rgba(50,110,190,0.30)" : "rgba(100,170,230,0.35)";
+  ctx.fillStyle = isDark ? "rgba(50,110,190,0.30)" : "rgba(120,220,255,0.40)";
   ctx.beginPath();
   ctx.moveTo(leftCx, bottomCy);
   ctx.lineTo(leftCx, leftCy);
@@ -445,9 +445,9 @@ function drawWaterSurface(ctx, piezoLines, toC, gMinX, gMaxX, isDark) {
   const [, rightCy] = toC(gMaxX, getPiezoY(sorted, gMaxX));
 
   ctx.save();
-  ctx.strokeStyle = isDark ? "rgba(80,150,240,0.90)" : "rgba(20,90,210,0.85)";
-  ctx.lineWidth   = 1.8;
-  ctx.setLineDash([10, 6]);
+  ctx.strokeStyle = isDark ? "#4d7fff" : "#0000ff";
+  ctx.lineWidth   = 2;
+  ctx.setLineDash([5, 4]);
   ctx.beginPath();
   ctx.moveTo(leftCx, leftCy);
   for (const [cx, cy] of cPts) ctx.lineTo(cx, cy);
@@ -673,9 +673,6 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
   const toC   = (x, y) => [offX + (x - gMinX) * scale, offY - (y - gMinY) * scale];
   const isDark = !opts.forExcel && document.documentElement.getAttribute("data-theme") === "dark";
 
-  // 수위 채색 (리즌 뒤에 가려지는 구조이므로 먼저 그림)
-  drawWaterFill(ctx, piezoLines, toC, gMinX, gMaxX, gMinY, isDark);
-
   // 리즌 채색 (물성치 할당된 것만)
   if (opts.viewRegion) {
     // View Region: 동일 물성 인접 리즌 내부 경계 숨김
@@ -704,7 +701,8 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
     }
   }
 
-  // 수위선 (파선)
+  // 수위 채색 + 수위선 (파선)
+  drawWaterFill(ctx, piezoLines, toC, gMinX, gMaxX, gMinY, isDark);
   drawWaterSurface(ctx, piezoLines, toC, gMinX, gMaxX, isDark);
 
   // 상재하중
@@ -746,7 +744,7 @@ function drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyl
   const centerVisible = ccx >= 0 && ccx <= W && ccy >= topPx && ccy <= H;
   const fontSize      = Math.min(28, topPx * 0.55) * (slipStyle.fosScale ?? 1.0);
   const fontFamily    = !slipStyle.fosFont || slipStyle.fosFont === "default"
-    ? "'HakgyoansimBareondotumB', '학교안심 바름돋움B', 'Pretendard', 'Segoe UI', Arial, sans-serif"
+    ? '"YDIYGO330", "-윤고딕330", "Pretendard", "Segoe UI", Arial, sans-serif'
     : `"${slipStyle.fosFont.replace(/["\\]/g, "")}", sans-serif`;
 
   if (centerVisible) {
@@ -789,6 +787,10 @@ function drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyl
         ctx.lineTo(ccx + tw, ccy + 3);
       }
       ctx.stroke();
+      ctx.fillStyle = "#ff0000";
+      ctx.beginPath();
+      ctx.arc((isRTL ? ccx - tw : ccx) - 6, ccy + 6, 3, 0, 2 * Math.PI);
+      ctx.fill();
       ctx.restore();
     }
     return;
@@ -834,6 +836,10 @@ function drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyl
       ctx.lineTo(textX + tw, textY);
     }
     ctx.stroke();
+    ctx.fillStyle = "#ff0000";
+    ctx.beginPath();
+    ctx.arc((isRTL ? textX - tw : textX) - 6, textY + 3, 3, 0, 2 * Math.PI);
+    ctx.fill();
     ctx.restore();
   }
 }
