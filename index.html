@@ -873,6 +873,8 @@
             <div class="rv-construction-header">
               <span class="rv-case-label" style="font-weight:600;color:var(--text);width:auto">시공시 해석</span>
               <button type="button" class="btn" id="rv-construction-add" style="padding:2px 10px;font-size:12px">+ 단계 추가</button>
+              <button type="button" class="btn" id="rv-normal-add" hidden>+ 상시</button>
+              <button type="button" class="btn" id="rv-seismic-add" hidden>+ 지진시</button>
             </div>
             <div id="rv-construction-stages">
               <!-- JS에서 동적 생성 -->
@@ -885,7 +887,7 @@
             <select id="rv-case-normal" class="rv-select rv-case-sel">
               <option value="">선택 안함</option>
             </select>
-            <span></span>
+            <button type="button" class="btn rv-stage-remove" id="rv-normal-remove" aria-label="상시 해석 삭제" title="상시 해석 삭제">✕</button>
           </div>
           <!-- 지진시 -->
           <div class="rv-case-select-row">
@@ -894,7 +896,7 @@
             <select id="rv-case-seismic" class="rv-select rv-case-sel">
               <option value="">선택 안함</option>
             </select>
-            <span></span>
+            <button type="button" class="btn rv-stage-remove" id="rv-seismic-remove" aria-label="지진시 해석 삭제" title="지진시 해석 삭제">✕</button>
           </div>
         </div>
 

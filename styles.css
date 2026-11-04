@@ -1894,6 +1894,8 @@ table.data-table td.readonly-cell input {
   align-items: center;
   gap: 6px;
 }
+.rv-case-select-row[hidden], .rv-construction-header .btn[hidden] { display: none; }
+.rv-case-select-row > .rv-stage-remove { width: 26px; height: 26px; min-height: 26px; padding: 0; line-height: 1; }
 
 .rv-case-label {
   width: 80px;

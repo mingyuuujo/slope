@@ -1280,6 +1280,17 @@ function populateCaseSelects(allResults) {
   });
 }
 
+function setStaticCaseVisible(caseKey, visible) {
+  const select = $(`rv-case-${caseKey}`);
+  const row = select?.closest(".rv-case-select-row");
+  const add = $(`rv-${caseKey}-add`);
+  if (!row || !add) return;
+  row.hidden = !visible;
+  add.hidden = visible;
+  if (visible && rvState.allResults.length) populateOneSelect(select, rvState.allResults, caseKey);
+  else select.value = "";
+}
+
 // 시공시 단계 행 추가
 function addConstructionStageRow(labelText, allResults) {
   const container = $("rv-construction-stages");
@@ -1322,7 +1333,9 @@ function getUserRepresentative() {
   });
 
   const getResult = (selId) => {
-    const val = $(selId)?.value.trim() ?? "";
+    const select = $(selId);
+    if (select?.closest(".rv-case-select-row")?.hidden) return null;
+    const val = select?.value.trim() ?? "";
     if (!val) return null;
     const idx = parseInt(val, 10);
     return (Number.isFinite(idx) && idx >= 0 && idx < rvState.allResults.length)
@@ -1777,6 +1790,14 @@ async function loadGszFile(file) {
     addConstructionStageRow("시공시", rvState.allResults);
   }
 
+  for (const caseKey of ["normal", "seismic"]) {
+    const select = $(`rv-case-${caseKey}`);
+    const row = select?.closest(".rv-case-select-row");
+    if (row) row.hidden = false;
+    const add = $(`rv-${caseKey}-add`);
+    if (add) add.hidden = true;
+  }
+
   // Excel 케이스 선택 드롭다운 채우기 (상시/지진시/편심 등)
   populateCaseSelects(rvState.allResults);
 
@@ -2159,6 +2180,10 @@ export function initResultViewer() {
 
   // 시공시 단계 추가 버튼
   $("rv-construction-add")?.addEventListener("click", () => addConstructionStageRow());
+  for (const caseKey of ["normal", "seismic"]) {
+    $(`rv-${caseKey}-remove`)?.addEventListener("click", () => setStaticCaseVisible(caseKey, false));
+    $(`rv-${caseKey}-add`)?.addEventListener("click", () => setStaticCaseVisible(caseKey, true));
+  }
   // 초기 단계 행 1개 생성 (파일 로드 전이라 드롭다운은 비어있음)
   addConstructionStageRow("시공시");
 

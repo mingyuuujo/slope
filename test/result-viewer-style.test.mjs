@@ -85,3 +85,32 @@ test("viewer zoom changes only the on-screen view", () => {
   assert.equal(elements["rv-zoom-pct"].textContent, "100%");
   assert.equal(elements["rv-view-viewport"].scrollLeft, 0);
 });
+
+test("default Excel cases can be removed and added again", () => {
+  const handlers = new Map();
+  const elements = { "rv-file": { addEventListener() {} } };
+  for (const key of ["normal", "seismic"]) {
+    const row = { hidden: false };
+    elements[`rv-case-${key}`] = { value: "0", closest: () => row };
+    elements[`rv-${key}-remove`] = { addEventListener: (type, fn) => handlers.set(`${key}:remove`, fn) };
+    elements[`rv-${key}-add`] = { hidden: true, addEventListener: (type, fn) => handlers.set(`${key}:add`, fn) };
+  }
+  globalThis.document = {
+    getElementById: (id) => elements[id] ?? null,
+    querySelectorAll: () => [], querySelector: () => null, addEventListener: () => {},
+  };
+  globalThis.window = { addEventListener: () => {} };
+
+  initResultViewer();
+  for (const key of ["normal", "seismic"]) {
+    const select = elements[`rv-case-${key}`];
+    const add = elements[`rv-${key}-add`];
+    handlers.get(`${key}:remove`)();
+    assert.equal(select.closest().hidden, true);
+    assert.equal(select.value, "");
+    assert.equal(add.hidden, false);
+    handlers.get(`${key}:add`)();
+    assert.equal(select.closest().hidden, false);
+    assert.equal(add.hidden, true);
+  }
+});
