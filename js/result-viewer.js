@@ -2176,6 +2176,7 @@ export function initResultViewer() {
         if (known.has(family)) continue;
         const option = document.createElement("option");
         option.value = family;
+        option.textContent = family;
         fosFontSelect.add(option, fosFontSelect.options[fosFontSelect.options.length - 1]);
       }
       fontStatus.textContent = `${families.length}개 설치 글꼴을 불러왔습니다.`;
