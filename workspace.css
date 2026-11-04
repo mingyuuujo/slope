@@ -88,15 +88,16 @@ table.data-table thead th { padding: 12px 8px; font-size: 12px; background: var(
 table.data-table tbody td { padding: 7px 6px; }
 table.data-table tbody tr:hover { background: var(--accent-soft); }
 #mat-table { min-width: 1400px; }
-.rv-style-settings { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
-.rv-style-settings > summary { cursor: pointer; }
-.rv-style-settings > summary::before { content: "▸"; margin-right: 8px; }
-.rv-style-settings[open] > summary::before { content: "▾"; }
-.rv-style-settings .rv-settings-grid { margin-top: 14px; }
-.rv-output-settings { margin-top: 12px; }
-.rv-output-settings > summary { cursor: pointer; color: var(--text); }
-.rv-settings-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; font-size: 13px; font-weight: 650; }
-.rv-settings-heading > span { font-size: 9px; letter-spacing: 1.5px; color: var(--dim); font-weight: 500; }
+.rv-output-settings, .rv-style-settings { margin-top: 12px; border-top: 1px solid var(--border); }
+.rv-output-settings > summary, .rv-style-settings > summary {
+  display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 4px;
+  color: var(--text); font-size: 13px; font-weight: 650; text-align: left;
+  cursor: pointer; list-style: none;
+}
+.rv-output-settings > summary::-webkit-details-marker, .rv-style-settings > summary::-webkit-details-marker { display: none; }
+.rv-output-settings > summary::before, .rv-style-settings > summary::before { content: "▸"; color: var(--muted); width: 12px; flex: none; }
+.rv-output-settings[open] > summary::before, .rv-style-settings[open] > summary::before { content: "▾"; }
+.rv-style-settings .rv-settings-grid { margin-top: 12px; }
 .rv-settings-grid { display: grid; grid-template-columns: 1fr 1.1fr 1fr; gap: 14px; }
 .rv-settings-card { min-width: 0; padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); }
 .rv-settings-card h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; font-size: 13px; font-weight: 650; }
