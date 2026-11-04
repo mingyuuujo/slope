@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { renderResultCanvas } from "../js/result-viewer.js";
+import { initResultViewer, renderResultCanvas } from "../js/result-viewer.js";
 
 test("FOS marker and GeoStudio water line render in both label positions", () => {
   globalThis.document = { documentElement: { getAttribute: () => "light" } };
@@ -31,4 +31,31 @@ test("FOS marker and GeoStudio water line render in both label positions", () =>
       calls.findIndex((call) => call.key === "fill" && call.fill === "#cccccc"));
     assert.ok(calls.some((call) => call.key === "fillText" && call.font.includes("YDIYGO330")));
   }
+});
+
+test("viewer zoom changes only the on-screen view", () => {
+  const handlers = new Map();
+  const makeElement = (id) => ({
+    id, style: {}, dataset: {},
+    addEventListener(type, fn) { handlers.set(`${id}:${type}`, fn); },
+  });
+  const ids = ["rv-file", "rv-view-viewport", "rv-view-spacer", "rv-canvas-clip", "rv-canvas", "rv-zoom-in", "rv-zoom-out", "rv-zoom-fit", "rv-zoom-pct"];
+  const elements = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+  Object.assign(elements["rv-view-viewport"], { clientWidth: 700, clientHeight: 300, scrollLeft: 0, scrollTop: 0 });
+  Object.assign(elements["rv-canvas"], { offsetWidth: 700, offsetHeight: 300, width: 700, height: 300 });
+  Object.defineProperty(elements["rv-view-spacer"], "offsetWidth", { get() { return parseFloat(this.style.width) || 700; } });
+  globalThis.document = {
+    getElementById: (id) => elements[id] ?? null,
+    querySelectorAll: () => [], querySelector: () => null, addEventListener: () => {},
+  };
+  globalThis.window = { addEventListener: () => {} };
+
+  initResultViewer();
+  handlers.get("rv-zoom-in:click")();
+  assert.equal(elements["rv-zoom-pct"].textContent, "125%");
+  assert.equal(elements["rv-view-viewport"].scrollLeft, 87.5);
+  assert.equal(elements["rv-canvas"].width, 700);
+  handlers.get("rv-zoom-fit:click")();
+  assert.equal(elements["rv-zoom-pct"].textContent, "100%");
+  assert.equal(elements["rv-view-viewport"].scrollLeft, 0);
 });

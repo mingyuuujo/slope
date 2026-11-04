@@ -31,6 +31,7 @@ let rvViewRegion = false;
 let rvFixedHeight = null;
 let rvFixedWidth  = null;   // 오른쪽 경계 (full canvas 기준 px), null = 자동
 let rvCropLeft    = 0;      // 왼쪽 크롭 px (0 = 자르지 않음)
+let rvViewZoom    = 1;      // 화면 보기 배율 (PNG/Excel 출력과 무관)
 
 // 파괴원호 스타일
 let rvSlipStyle = {
@@ -1324,17 +1325,46 @@ function getUserRepresentative() {
 }
 
 // ─── 파괴원호 스타일 애니메이션 헬퍼 ─────────────────────────
+function updateViewZoom() {
+  const canvas = $("rv-canvas");
+  const clip = $("rv-canvas-clip");
+  const spacer = $("rv-view-spacer");
+  if (!canvas || !clip || !spacer) return;
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+  spacer.style.width = `${w * rvViewZoom}px`;
+  spacer.style.height = `${h * rvViewZoom}px`;
+  clip.style.width = `${w}px`;
+  clip.style.height = `${h}px`;
+  clip.style.transform = `scale(${rvViewZoom})`;
+  $("rv-zoom-pct").textContent = `${Math.round(rvViewZoom * 100)}%`;
+}
+
+function setViewZoom(next, x, y) {
+  const viewport = $("rv-view-viewport");
+  const spacer = $("rv-view-spacer");
+  if (!viewport || !spacer) return;
+  const old = rvViewZoom;
+  const oldLeft = Math.max(0, (viewport.clientWidth - spacer.offsetWidth) / 2);
+  const contentX = (viewport.scrollLeft + x - oldLeft) / old;
+  const contentY = (viewport.scrollTop + y) / old;
+  rvViewZoom = Math.max(0.5, Math.min(4, next));
+  updateViewZoom();
+  const newLeft = Math.max(0, (viewport.clientWidth - spacer.offsetWidth) / 2);
+  viewport.scrollLeft = contentX * rvViewZoom + newLeft - x;
+  viewport.scrollTop = contentY * rvViewZoom - y;
+}
+
 function renderCached() {
   const canvas = $("rv-canvas");
   if (!canvas || !rvRenderCache) return;
   const { regionMatMap, surchargeLoads, piezoLines, slip, slipEntryExit } = rvRenderCache;
-  const wrapEl   = canvas.closest(".rv-canvas-wrap");
-  const naturalW = (wrapEl ? wrapEl.clientWidth : 0) || 700;
-  const hasCrop  = (rvFixedWidth && rvFixedWidth > 0) || rvCropLeft > 0;
-  canvas.style.width = hasCrop ? naturalW + "px" : "";
+  const viewport = $("rv-view-viewport");
+  const naturalW = viewport?.clientWidth || 700;
+  canvas.style.width = naturalW + "px";
   renderResultCanvas(canvas, rvState.regions, rvState.materials, regionMatMap, slip, surchargeLoads, piezoLines,
     { viewRegion: rvViewRegion, fixedHeight: rvFixedHeight, slipStyle: rvSlipStyleAnim, slipEntryExit });
   updateResizeOverlay();
+  updateViewZoom();
 }
 
 function startSlipAnim() {
@@ -1480,6 +1510,7 @@ function initResizeHandles() {
 
   overlay.querySelectorAll(".rv-handle").forEach((handle) => {
     handle.addEventListener("mousedown", (e) => {
+      if (e.button !== 0 || e.altKey) return;
       e.preventDefault();
       const canvas = $("rv-canvas");
       if (!canvas || !rvState.allResults.length) return;
@@ -1498,8 +1529,8 @@ function initResizeHandles() {
 
   document.addEventListener("mousemove", (e) => {
     if (!dragging) return;
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
+    const dx = (e.clientX - startX) / rvViewZoom;
+    const dy = (e.clientY - startY) / rvViewZoom;
 
     if (dragDir === "r" || dragDir === "br") {
       // 오른쪽 경계 = 현재 왼쪽크롭 + 기존가시폭 + dx
@@ -1650,6 +1681,9 @@ async function loadGszFile(file) {
   setStatus("해석 결과 파싱 중...");
   rvState.allResults = await parseAllResults(zip, doc);
   rvState.selectedIdx = 0;
+  rvViewZoom = 1;
+  $("rv-view-viewport").scrollLeft = 0;
+  $("rv-view-viewport").scrollTop = 0;
 
   // 해석 선택 드롭다운
   const sel = $("rv-analysis-select");
@@ -1982,6 +2016,39 @@ export function initResultViewer() {
   const excelBtn  = $("rv-excel-btn");
 
   if (!fileInput) return;
+
+  const viewport = $("rv-view-viewport");
+  const zoomAtCenter = (factor) => setViewZoom(rvViewZoom * factor, viewport.clientWidth / 2, viewport.clientHeight / 2);
+  $("rv-zoom-in")?.addEventListener("click", () => zoomAtCenter(1.25));
+  $("rv-zoom-out")?.addEventListener("click", () => zoomAtCenter(0.8));
+  $("rv-zoom-fit")?.addEventListener("click", () => {
+    setViewZoom(1, viewport.clientWidth / 2, viewport.clientHeight / 2);
+    viewport.scrollLeft = 0;
+    viewport.scrollTop = 0;
+  });
+  viewport?.addEventListener("wheel", (e) => {
+    if (!rvRenderCache) return;
+    e.preventDefault();
+    const rect = viewport.getBoundingClientRect();
+    setViewZoom(rvViewZoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12), e.clientX - rect.left, e.clientY - rect.top);
+  }, { passive: false });
+
+  let panStart = null;
+  viewport?.addEventListener("pointerdown", (e) => {
+    if (e.button !== 1 && !(e.button === 0 && e.altKey)) return;
+    e.preventDefault();
+    panStart = { x: e.clientX, y: e.clientY, left: viewport.scrollLeft, top: viewport.scrollTop };
+    viewport.dataset.panning = "true";
+    viewport.setPointerCapture(e.pointerId);
+  });
+  viewport?.addEventListener("pointermove", (e) => {
+    if (!panStart) return;
+    viewport.scrollLeft = panStart.left - (e.clientX - panStart.x);
+    viewport.scrollTop = panStart.top - (e.clientY - panStart.y);
+  });
+  const stopPan = () => { panStart = null; delete viewport.dataset.panning; };
+  viewport?.addEventListener("pointerup", stopPan);
+  viewport?.addEventListener("pointercancel", stopPan);
 
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files[0];

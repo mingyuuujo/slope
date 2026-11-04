@@ -662,6 +662,7 @@
             <span>View Region — 동일 물성 인접 리즌 경계 통합</span>
           </label>
         </div>
+        <details class="rv-output-settings"><summary>출력 이미지 크기·자르기</summary>
         <div class="file-row" style="align-items:center;gap:8px;margin-top:4px">
           <label for="rv-fix-height-enable" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:0.9em">
             <input type="checkbox" id="rv-fix-height-enable" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
@@ -680,9 +681,10 @@
             style="display:none;width:72px;padding:2px 6px;font-size:0.88em;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px" />
           <span style="font-size:0.8em;color:var(--muted)">— 드래그 핸들로도 조절 가능</span>
         </div>
+        </details>
 
         <!-- 파괴원호 스타일 -->
-<div class="rv-style-settings"><div class="rv-settings-heading">파괴원호 스타일<span>STYLE SETTINGS</span></div><div class="rv-settings-grid"><section class="rv-settings-card"><h3><span>01</span>선 스타일</h3><div class="rv-style-row">
+<details class="rv-style-settings"><summary class="rv-settings-heading">파괴원호 스타일<span>STYLE SETTINGS</span></summary><div class="rv-settings-grid"><section class="rv-settings-card"><h3><span>01</span>선 스타일</h3><div class="rv-style-row">
 <label class="rv-style-label" for="rv-slip-linewidth">선 두께</label>
 <input class="rv-slider" id="rv-slip-linewidth" max="10" min="1" step="0.5" type="range" value="2"/>
 <span class="rv-style-val" id="rv-slip-linewidth-val">2</span>
@@ -751,22 +753,37 @@
 </div><div class="rv-style-row rv-setting-color">
 <label class="rv-style-label" for="rv-fos-outline-color">문자 외곽선</label>
 <input class="rv-color-inp" id="rv-fos-outline-color" title="FOS 문자 외곽선 색 — 문자 외곽선 체크 시 사용" type="color" value="#ffffff"/>
-</div></section></div></div>
+</div></section></div></details>
       </div>
 
       <!-- 캔버스 + 결과 패널 -->
       <div class="rv-workspace">
         <div class="rv-canvas-wrap">
-          <div id="rv-canvas-clip" class="rv-canvas-clip">
-            <canvas id="rv-canvas" class="rv-canvas"></canvas>
+          <div class="rv-view-toolbar">
+            <span>휠: 확대·축소 · 가운데 버튼 또는 Alt+드래그: 이동</span>
+            <div class="rv-view-actions">
+              <button type="button" class="btn map-canvas-zoom-btn" id="rv-zoom-out" aria-label="축소">−</button>
+              <button type="button" class="btn map-canvas-zoom-btn" id="rv-zoom-fit">화면 맞춤</button>
+              <button type="button" class="btn map-canvas-zoom-btn" id="rv-zoom-in" aria-label="확대">+</button>
+              <span class="map-canvas-zoom-pct" id="rv-zoom-pct">100%</span>
+              <button type="button" class="btn btn-primary" id="rv-png-btn">↓ PNG 다운로드</button>
+              <button type="button" class="btn btn-secondary" id="rv-copy-btn">⎘ 클립보드로 복사</button>
+            </div>
           </div>
-          <div id="rv-shadow-l" class="rv-crop-shadow" style="display:none"></div>
-          <div id="rv-shadow-r" class="rv-crop-shadow" style="display:none"></div>
-          <div id="rv-resize-overlay" class="rv-resize-overlay" style="display:none">
-            <div class="rv-handle rv-handle-l"  data-dir="l"></div>
-            <div class="rv-handle rv-handle-r"  data-dir="r"></div>
-            <div class="rv-handle rv-handle-b"  data-dir="b"></div>
-            <div class="rv-handle rv-handle-br" data-dir="br"></div>
+          <div id="rv-view-viewport" class="rv-view-viewport">
+            <div id="rv-view-spacer" class="rv-view-spacer">
+              <div id="rv-canvas-clip" class="rv-canvas-clip">
+                <canvas id="rv-canvas" class="rv-canvas"></canvas>
+                <div id="rv-shadow-l" class="rv-crop-shadow" style="display:none"></div>
+                <div id="rv-shadow-r" class="rv-crop-shadow" style="display:none"></div>
+                <div id="rv-resize-overlay" class="rv-resize-overlay" style="display:none">
+                  <div class="rv-handle rv-handle-l"  data-dir="l"></div>
+                  <div class="rv-handle rv-handle-r"  data-dir="r"></div>
+                  <div class="rv-handle rv-handle-b"  data-dir="b"></div>
+                  <div class="rv-handle rv-handle-br" data-dir="br"></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="rv-sidebar">
@@ -775,10 +792,6 @@
             <div id="rv-info-panel" class="rv-info-panel">
               <span style="color:var(--muted);font-size:0.85em">GSZ 파일을 업로드하면 결과가 표시됩니다.</span>
             </div>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
-            <button type="button" class="btn btn-primary" id="rv-png-btn">↓ PNG 다운로드</button>
-            <button type="button" class="btn btn-secondary" id="rv-copy-btn">⎘ 클립보드로 복사</button>
           </div>
         </div>
       </div>
