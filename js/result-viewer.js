@@ -673,6 +673,9 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
   const toC   = (x, y) => [offX + (x - gMinX) * scale, offY - (y - gMinY) * scale];
   const isDark = !opts.forExcel && document.documentElement.getAttribute("data-theme") === "dark";
 
+  // 수위 채색은 리즌 뒤에 두어 재료색을 가리지 않음
+  drawWaterFill(ctx, piezoLines, toC, gMinX, gMaxX, gMinY, isDark);
+
   // 리즌 채색 (물성치 할당된 것만)
   if (opts.viewRegion) {
     // View Region: 동일 물성 인접 리즌 내부 경계 숨김
@@ -701,8 +704,7 @@ export function renderResultCanvas(canvas, regions, materials, regionMatMap, sli
     }
   }
 
-  // 수위 채색 + 수위선 (파선)
-  drawWaterFill(ctx, piezoLines, toC, gMinX, gMaxX, gMinY, isDark);
+  // 수위선 (파선)
   drawWaterSurface(ctx, piezoLines, toC, gMinX, gMaxX, isDark);
 
   // 상재하중
