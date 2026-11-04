@@ -37,6 +37,7 @@ let rvSlipStyle = {
   lineWidth:       2,       // 선 두께 (px)
   outline:         false,   // 외곽선 halo + 점선 모드
   fosScale:        1.0,     // FOS 글자 크기 배율
+  fosFont:         "default",
   fosAlign:        "auto",  // FOS 레이블 위치: "auto" | "left" | "right"
   slipColor:       "#111111",             // 포락선 색
   slipHaloColor:   "#ffffff",             // 포락선 외곽선(halo) 색
@@ -50,7 +51,7 @@ let rvSlipStyle = {
 
 // 파괴원호 스타일 애니메이션 — 현재 렌더링 중인 보간값
 let rvSlipStyleAnim = {
-  lineWidth: 2, fosScale: 1.0, outlineT: 0.0,
+  lineWidth: 2, fosScale: 1.0, fosFont: "default", outlineT: 0.0,
   fosAlign: "auto",
   slipColor: "#111111", slipHaloColor: "#ffffff", slipHaloWidth: 5,
   fosColor: "#111111", fosUnderlineColor: "#111111",
@@ -744,6 +745,9 @@ function buildSlipPayload(result) {
 function drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyle }) {
   const centerVisible = ccx >= 0 && ccx <= W && ccy >= topPx && ccy <= H;
   const fontSize      = Math.min(28, topPx * 0.55) * (slipStyle.fosScale ?? 1.0);
+  const fontFamily    = !slipStyle.fosFont || slipStyle.fosFont === "default"
+    ? "'HakgyoansimBareondotumB', '학교안심 바름돋움B', 'Pretendard', 'Segoe UI', Arial, sans-serif"
+    : `"${slipStyle.fosFont}", sans-serif`;
 
   if (centerVisible) {
     ctx.save();
@@ -761,7 +765,7 @@ function drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyl
       const showFosOutline = slipStyle.fosTextOutline    ?? false;
 
       ctx.save();
-      ctx.font         = `bold ${fontSize}px 'HakgyoansimBareondotumB', '학교안심 바름돋움B', 'Pretendard', 'Segoe UI', Arial, sans-serif`;
+      ctx.font         = `bold ${fontSize}px ${fontFamily}`;
       ctx.textBaseline = "bottom";
       ctx.textAlign    = isRTL ? "right" : "left";
       if (showFosOutline) {
@@ -800,7 +804,7 @@ function drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyl
     const showFosOutline = slipStyle.fosTextOutline    ?? false;
 
     ctx.save();
-    ctx.font         = `bold ${fontSize}px 'HakgyoansimBareondotumB', '학교안심 바름돋움B', 'Pretendard', 'Segoe UI', Arial, sans-serif`;
+    ctx.font         = `bold ${fontSize}px ${fontFamily}`;
     ctx.fillStyle    = fosFill;
     ctx.strokeStyle  = fosStroke;
     ctx.lineWidth    = slipStyle.fosOutlineWidth ?? 3;
@@ -1350,6 +1354,7 @@ function startSlipAnim() {
     a.outlineT  = lerp(a.outlineT,  t.outline ? 1.0 : 0.0);
     // 비애니메이션 프로퍼티는 즉시 동기화
     a.fosAlign        = t.fosAlign;
+    a.fosFont         = t.fosFont;
     a.slipColor       = t.slipColor;
     a.slipHaloColor   = t.slipHaloColor;
     a.slipHaloWidth   = t.slipHaloWidth;
@@ -1387,6 +1392,7 @@ async function updateCanvas(idx) {
   rvSlipStyleAnim.fosScale        = rvSlipStyle.fosScale;
   rvSlipStyleAnim.outlineT        = rvSlipStyle.outline ? 1.0 : 0.0;
   rvSlipStyleAnim.fosAlign        = rvSlipStyle.fosAlign;
+  rvSlipStyleAnim.fosFont         = rvSlipStyle.fosFont;
   rvSlipStyleAnim.slipColor       = rvSlipStyle.slipColor;
   rvSlipStyleAnim.slipHaloColor   = rvSlipStyle.slipHaloColor;
   rvSlipStyleAnim.slipHaloWidth   = rvSlipStyle.slipHaloWidth;
@@ -2133,6 +2139,15 @@ export function initResultViewer() {
   const slipOutline   = $("rv-slip-outline");
   const slipFosSlider = $("rv-slip-fosscale");
   const slipFosVal    = $("rv-slip-fosscale-val");
+  const fosFontSelect = $("rv-fos-font");
+
+  if (fosFontSelect) {
+    fosFontSelect.addEventListener("change", () => {
+      rvSlipStyle.fosFont = fosFontSelect.value;
+      rvSlipStyleAnim.fosFont = fosFontSelect.value;
+      if (rvState.allResults.length) renderCached();
+    });
+  }
 
   if (slipLwSlider) {
     slipLwSlider.addEventListener("input", () => {
