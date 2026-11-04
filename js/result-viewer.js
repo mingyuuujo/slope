@@ -740,9 +740,9 @@ function buildSlipPayload(result) {
 }
 
 /**
- * FOS 텍스트 + 슬립 중심 마커 (drawSlipCircle / drawSlipProfile 공통).
+ * FOS 텍스트 + 빨간 점 (drawSlipCircle / drawSlipProfile 공통).
  */
-function drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyle }) {
+function drawSlipFos(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyle }) {
   const centerVisible = ccx >= 0 && ccx <= W && ccy >= topPx && ccy <= H;
   const fontSize      = Math.min(28, topPx * 0.55) * (slipStyle.fosScale ?? 1.0);
   const fontFamily    = !slipStyle.fosFont || slipStyle.fosFont === "default"
@@ -750,13 +750,6 @@ function drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyl
     : `"${slipStyle.fosFont.replace(/["\\]/g, "")}", sans-serif`;
 
   if (centerVisible) {
-    ctx.save();
-    ctx.fillStyle = "#111111";
-    ctx.beginPath();
-    ctx.arc(ccx, ccy, 3, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.restore();
-
     if (Number.isFinite(fos)) {
       const fosStr         = fos.toFixed(3);
       const fosFill        = slipStyle.fosColor          ?? "#111111";
@@ -913,7 +906,7 @@ function drawSlipProfile(ctx, slip, tf, W, H, topPx, profile, toC, _isDark, slip
     ctx.restore();
   }
 
-  drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyle });
+  drawSlipFos(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyle });
 }
 
 /**
@@ -1124,7 +1117,7 @@ function drawSlipCircle(ctx, slip, tf, W, H, topPx, allRegions, toC, _isDark, sl
         return ccx > (mLeft + mRight) / 2;
       })();
 
-  drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyle });
+  drawSlipFos(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyle });
 }
 
 // ─── 케이스 오버라이드 헬퍼 ──────────────────────────────────

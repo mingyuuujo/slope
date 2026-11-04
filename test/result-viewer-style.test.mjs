@@ -25,6 +25,7 @@ test("FOS marker and GeoStudio water line render in both label positions", () =>
     renderResultCanvas(canvas, regions, materials, new Map([[1, 1]]), slip, null, piezoLines, { slipStyle: { fosAlign } });
 
     assert.equal(calls.filter((call) => call.key === "arc" && call.fill === "#ff0000").length, 1);
+    assert.equal(calls.filter((call) => call.key === "arc" && call.fill === "#111111").length, 0);
     assert.ok(calls.some((call) => call.key === "stroke" && call.stroke === "#0000ff" && String(call.dash) === "5,4"));
     assert.ok(calls.findIndex((call) => call.key === "fill" && call.fill === "rgba(120,220,255,0.40)") <
       calls.findIndex((call) => call.key === "fill" && call.fill === "#cccccc"));
