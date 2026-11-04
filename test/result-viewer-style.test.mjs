@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { initResultViewer, renderResultCanvas } from "../js/result-viewer.js";
+import { initResultViewer, renderResultCanvas, verticalCropBounds } from "../js/result-viewer.js";
+
+test("vertical crop keeps a visible region when both edges move", () => {
+  assert.deepEqual(verticalCropBounds(524, 24, 32), { top: 24, bottom: 492 });
+  assert.deepEqual(verticalCropBounds(100, 90, 90), { top: 50, bottom: 100 });
+});
 
 test("FOS marker and GeoStudio water line render in both label positions", () => {
   globalThis.document = { documentElement: { getAttribute: () => "light" } };

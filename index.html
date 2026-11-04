@@ -27,8 +27,6 @@
     <div class="brand"><img class="brand-mark" src="favicon.svg" alt="" width="36" height="36" /><div><h1>SLOPE<span> ENGINEERING</span></h1><p class="sub">지반 해석 · 설계 워크스페이스</p></div></div>
     <div class="header-actions">
       <button type="button" class="theme-toggle" id="theme-toggle" aria-label="테마 전환" title="라이트/다크 모드 전환">
-        <span class="theme-toggle-icon theme-icon-light" aria-hidden="true">☀</span>
-        <span class="theme-toggle-icon theme-icon-dark" aria-hidden="true">☾</span>
         <span class="theme-toggle-label" id="theme-toggle-label">라이트</span>
       </button>
       <button type="button" class="btn" id="workspace-resources" aria-expanded="false" aria-controls="project-resources">프로젝트 · 라이브러리</button>
@@ -37,7 +35,7 @@
 
   <div class="app-layout">
     <nav class="tabs" role="tablist" aria-label="작업 탐색" aria-orientation="vertical">
-<div class="nav-caption">WORKSPACE</div>
+<div class="nav-caption">작업 메뉴</div>
 <div class="nav-group-label" role="presentation">모델 준비</div>
 <button type="button" class="tab-btn active" data-tab="materials" role="tab">물성치 입력</button>
 <button type="button" class="tab-btn" data-tab="mapping" role="tab">Region 매핑</button>
@@ -57,7 +55,7 @@
     <aside class="sidebar" id="project-resources" aria-label="프로젝트 및 물성 라이브러리" hidden>
       <div class="resources-heading">프로젝트 탐색기<button type="button" id="resources-close" aria-label="프로젝트 탐색기 닫기">×</button></div>
       <div class="sidebar-section">
-        <div class="sidebar-title">📁 프로젝트</div>
+        <div class="sidebar-title">프로젝트</div>
         <div class="project-controls">
           <button type="button" class="btn btn-sm" id="proj-new" title="새 프로젝트">새로</button>
           <button type="button" class="btn btn-sm" id="proj-open" title="프로젝트 열기">열기</button>
@@ -69,7 +67,7 @@
       <div class="sidebar-divider"></div>
 
       <div class="sidebar-section">
-        <div class="sidebar-title">📚 물성 라이브러리</div>
+        <div class="sidebar-title">물성 라이브러리</div>
         <input type="text" id="lib-search" class="lib-search" placeholder="검색..." />
         <div id="lib-panel" class="lib-panel">
           <!-- 라이브러리 아이템들 (JavaScript에서 생성) -->
@@ -83,7 +81,7 @@
       <div class="sidebar-divider"></div>
 
       <div class="sidebar-section">
-        <div class="sidebar-title">⚙️ 설정</div>
+        <div class="sidebar-title">설정</div>
         <label class="checkbox-label">
           <input type="checkbox" id="auto-save" checked />
           자동 저장
@@ -96,7 +94,7 @@
 
     <!-- 메인 콘텐츠 -->
     <div class="main-content">
-  <div class="workspace-heading"><div><div class="workspace-breadcrumb" id="workspace-breadcrumb">워크스페이스 / 모델 준비</div><h2 id="workspace-title">물성치 입력</h2><p id="workspace-description">지반 재료와 강도 모델을 정의하고 GSZ 파일에 적용합니다.</p></div><span class="workspace-tag">ENGINEERING WORKSPACE</span></div>
+  <div class="workspace-heading"><div><div class="workspace-breadcrumb" id="workspace-breadcrumb">워크스페이스 / 모델 준비</div><h2 id="workspace-title">물성치 입력</h2><p id="workspace-description">지반 재료와 강도 모델을 정의하고 GSZ 파일에 적용합니다.</p></div></div>
   <main class="shell">
     <section id="panel-materials" class="panel active" role="tabpanel">
       <div class="group">
@@ -666,16 +664,16 @@
         <div class="file-row" style="align-items:center;gap:8px;margin-top:4px">
           <label for="rv-fix-height-enable" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:0.9em">
             <input type="checkbox" id="rv-fix-height-enable" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
-            <span>이미지 높이 변경</span>
+            <span>출력 영역 높이</span>
           </label>
           <input type="number" id="rv-fix-height-val" min="50" max="2000" step="10" placeholder="px"
             style="display:none;width:72px;padding:2px 6px;font-size:0.88em;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px" />
-          <span id="rv-fix-height-hint" style="display:none;font-size:0.8em;color:var(--muted)">px — 단면 하단부터 잘림 / Excel PNG도 동일 비율 적용</span>
+          <span id="rv-fix-height-hint" style="display:none;font-size:0.8em;color:var(--muted)">px — 캔버스 크기는 유지하고 출력 영역만 조절</span>
         </div>
         <div class="file-row" style="align-items:center;gap:8px;margin-top:4px">
           <label for="rv-fix-width-enable" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:0.9em">
             <input type="checkbox" id="rv-fix-width-enable" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
-            <span>이미지 너비 변경</span>
+            <span>출력 영역 너비</span>
           </label>
           <input type="number" id="rv-fix-width-val" min="200" max="4000" step="10" placeholder="px"
             style="display:none;width:72px;padding:2px 6px;font-size:0.88em;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px" />
@@ -773,10 +771,13 @@
           <div id="rv-view-viewport" class="rv-view-viewport">
             <div id="rv-view-spacer" class="rv-view-spacer">
               <div id="rv-canvas-clip" class="rv-canvas-clip">
-                <canvas id="rv-canvas" class="rv-canvas"></canvas>
+                <canvas id="rv-canvas" class="rv-canvas" role="img" aria-label="해석 결과 단면도"></canvas>
+                <div id="rv-shadow-t" class="rv-crop-shadow" style="display:none"></div>
                 <div id="rv-shadow-l" class="rv-crop-shadow" style="display:none"></div>
                 <div id="rv-shadow-r" class="rv-crop-shadow" style="display:none"></div>
+                <div id="rv-shadow-b" class="rv-crop-shadow" style="display:none"></div>
                 <div id="rv-resize-overlay" class="rv-resize-overlay" style="display:none">
+                  <div class="rv-handle rv-handle-t"  data-dir="t"></div>
                   <div class="rv-handle rv-handle-l"  data-dir="l"></div>
                   <div class="rv-handle rv-handle-r"  data-dir="r"></div>
                   <div class="rv-handle rv-handle-b"  data-dir="b"></div>

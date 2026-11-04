@@ -1189,7 +1189,7 @@ table.data-table td.readonly-cell input {
   height: 100%;
   width: 0%;
   background: linear-gradient(90deg, var(--accent), #4fc3f7);
-  transition: width 0.2s;
+  transition: none;
 }
 
 .log-box {
@@ -1750,7 +1750,7 @@ table.data-table td.readonly-cell input {
   background: rgba(0, 0, 0, 0.48);
   pointer-events: none;
   z-index: 2;
-  transition: width 0.04s, left 0.04s;
+  transition: none;
 }
 
 .rv-resize-overlay {
@@ -1793,6 +1793,15 @@ table.data-table td.readonly-cell input {
   height: 5px;
   border-radius: 3px;
   bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: ns-resize;
+}
+.rv-handle-t {
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  top: 0;
   left: 50%;
   transform: translateX(-50%);
   cursor: ns-resize;
