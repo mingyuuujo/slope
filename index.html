@@ -758,12 +758,14 @@
       <div class="rv-workspace">
         <div class="rv-canvas-wrap">
           <div class="rv-view-toolbar">
-            <span>휠: 확대·축소 · 가운데 버튼 또는 Alt+드래그: 이동</span>
+            <span>선택 영역 드래그: 위치 이동 · 테두리: 크기 조절 · Alt+드래그: 화면 이동</span>
             <div class="rv-view-actions">
               <button type="button" class="btn map-canvas-zoom-btn" id="rv-zoom-out" aria-label="축소">−</button>
               <button type="button" class="btn map-canvas-zoom-btn" id="rv-zoom-fit">화면 맞춤</button>
               <button type="button" class="btn map-canvas-zoom-btn" id="rv-zoom-in" aria-label="확대">+</button>
               <span class="map-canvas-zoom-pct" id="rv-zoom-pct">100%</span>
+              <button type="button" class="btn map-canvas-zoom-btn" id="rv-zoom-lock" aria-pressed="false" title="현재 배율 고정">화면 고정</button>
+              <span class="rv-crop-size" id="rv-crop-size">출력 크기 —</span>
               <button type="button" class="btn btn-primary" id="rv-png-btn">↓ PNG 다운로드</button>
               <button type="button" class="btn btn-secondary" id="rv-copy-btn">⎘ 클립보드로 복사</button>
             </div>

@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { initResultViewer, renderResultCanvas, verticalCropBounds } from "../js/result-viewer.js";
+import { initResultViewer, moveCropRect, renderResultCanvas, verticalCropBounds } from "../js/result-viewer.js";
 
 test("vertical crop keeps a visible region when both edges move", () => {
   assert.deepEqual(verticalCropBounds(524, 24, 32), { top: 24, bottom: 492 });
   assert.deepEqual(verticalCropBounds(100, 90, 90), { top: 50, bottom: 100 });
+});
+
+test("moving the crop keeps its size inside the canvas", () => {
+  assert.deepEqual(moveCropRect(1000, 500, 100, 20, 700, 400, 60, 30),
+    { left: 160, right: 860, top: 50, bottom: 50 });
+  assert.deepEqual(moveCropRect(1000, 500, 100, 20, 700, 400, 900, -200),
+    { left: 300, right: 1000, top: 0, bottom: 100 });
 });
 
 test("FOS marker and GeoStudio water line render in both label positions", () => {
@@ -50,8 +57,9 @@ test("viewer zoom changes only the on-screen view", () => {
   const makeElement = (id) => ({
     id, style: {}, dataset: {},
     addEventListener(type, fn) { handlers.set(`${id}:${type}`, fn); },
+    setAttribute(name, value) { this[name] = value; },
   });
-  const ids = ["rv-file", "rv-view-viewport", "rv-view-spacer", "rv-canvas-clip", "rv-canvas", "rv-zoom-in", "rv-zoom-out", "rv-zoom-fit", "rv-zoom-pct"];
+  const ids = ["rv-file", "rv-view-viewport", "rv-view-spacer", "rv-canvas-clip", "rv-canvas", "rv-zoom-in", "rv-zoom-out", "rv-zoom-fit", "rv-zoom-lock", "rv-zoom-pct"];
   const elements = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
   Object.assign(elements["rv-view-viewport"], { clientWidth: 700, clientHeight: 300, scrollLeft: 0, scrollTop: 0 });
   Object.assign(elements["rv-canvas"], { offsetWidth: 700, offsetHeight: 300, width: 700, height: 300 });
@@ -67,6 +75,12 @@ test("viewer zoom changes only the on-screen view", () => {
   assert.equal(elements["rv-zoom-pct"].textContent, "125%");
   assert.equal(elements["rv-view-viewport"].scrollLeft, 87.5);
   assert.equal(elements["rv-canvas"].width, 700);
+  handlers.get("rv-zoom-lock:click")({ currentTarget: elements["rv-zoom-lock"] });
+  assert.equal(elements["rv-zoom-lock"]["aria-pressed"], "true");
+  assert.equal(elements["rv-zoom-in"].disabled, true);
+  handlers.get("rv-zoom-out:click")();
+  assert.equal(elements["rv-zoom-pct"].textContent, "125%");
+  handlers.get("rv-zoom-lock:click")({ currentTarget: elements["rv-zoom-lock"] });
   handlers.get("rv-zoom-fit:click")();
   assert.equal(elements["rv-zoom-pct"].textContent, "100%");
   assert.equal(elements["rv-view-viewport"].scrollLeft, 0);

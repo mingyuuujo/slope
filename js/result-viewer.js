@@ -39,7 +39,13 @@ export function verticalCropBounds(height, top, bottom) {
   const visibleBottom = Math.min(height, Math.max(visibleTop + 50, height - Math.max(0, bottom)));
   return { top: visibleTop, bottom: visibleBottom };
 }
+export function moveCropRect(canvasW, canvasH, left, top, width, height, dx, dy) {
+  const nextLeft = Math.round(Math.max(0, Math.min(canvasW - width, left + dx)));
+  const nextTop = Math.round(Math.max(0, Math.min(canvasH - height, top + dy)));
+  return { left: nextLeft, right: nextLeft + width, top: nextTop, bottom: Math.round(canvasH - nextTop - height) };
+}
 let rvViewZoom    = 1;      // 화면 보기 배율 (PNG/Excel 출력과 무관)
+let rvZoomLocked  = false;
 
 // 파괴원호 스타일
 let rvSlipStyle = {
@@ -1351,6 +1357,7 @@ function updateViewZoom() {
 }
 
 function setViewZoom(next, x, y) {
+  if (rvZoomLocked) return;
   const viewport = $("rv-view-viewport");
   const spacer = $("rv-view-spacer");
   if (!viewport || !spacer) return;
@@ -1455,6 +1462,7 @@ async function updateCanvas(idx) {
 function updateResizeOverlay() {
   const canvas  = $("rv-canvas");
   const overlay = $("rv-resize-overlay");
+  const sizeEl  = $("rv-crop-size");
   const shadowT = $("rv-shadow-t");
   const shadowL = $("rv-shadow-l");
   const shadowR = $("rv-shadow-r");
@@ -1464,6 +1472,7 @@ function updateResizeOverlay() {
   const canvasW = canvas.offsetWidth / rvViewZoom;
   const h       = canvas.clientHeight / rvViewZoom;
   if (canvasW <= 0 || h <= 0 || !rvState.allResults.length) {
+    if (sizeEl) sizeEl.textContent = "출력 크기 —";
     overlay.style.display = "none";
     if (shadowT) shadowT.style.display = "none";
     if (shadowL) shadowL.style.display = "none";
@@ -1476,6 +1485,7 @@ function updateResizeOverlay() {
   const visR = (rvFixedWidth && rvFixedWidth > 0) ? Math.min(rvFixedWidth, canvasW) : canvasW;
   const visW = Math.max(50, visR - visL);
   const { top: visT, bottom: visB } = verticalCropBounds(h, rvCropTop, rvCropBottom);
+  if (sizeEl) sizeEl.textContent = `출력 ${Math.round(visW)} × ${Math.round(visB - visT)} px`;
 
   // 오버레이: 가시 영역 위에 테두리 표시
   overlay.style.display = "";
@@ -1542,16 +1552,15 @@ function initResizeHandles() {
   let dragging     = false;
   let dragDir      = "";
   let startX = 0, startY = 0;
-  let startVisW = 0, startH = 0, startCanvasW = 0, startCropLeft = 0, startCropTop = 0, startCropBottom = 0;
+  let startVisW = 0, startVisH = 0, startH = 0, startCanvasW = 0, startCropLeft = 0, startCropTop = 0, startCropBottom = 0;
 
-  overlay.querySelectorAll(".rv-handle").forEach((handle) => {
-    handle.addEventListener("mousedown", (e) => {
+  const startDrag = (e, dir) => {
       if (e.button !== 0 || e.altKey) return;
       e.preventDefault();
       const canvas = $("rv-canvas");
       if (!canvas || !rvState.allResults.length) return;
       dragging     = true;
-      dragDir      = handle.dataset.dir;
+      dragDir      = dir;
       startX       = e.clientX;
       startY       = e.clientY;
       startCanvasW = canvas.offsetWidth / rvViewZoom;
@@ -1562,13 +1571,30 @@ function initResizeHandles() {
       startCropLeft = rvCropLeft;
       startCropTop = rvCropTop;
       startCropBottom = rvCropBottom;
-    });
+      const bounds = verticalCropBounds(startH, startCropTop, startCropBottom);
+      startVisH = bounds.bottom - bounds.top;
+  };
+  overlay.addEventListener("mousedown", (e) => {
+    if (e.target === overlay) startDrag(e, "move");
+  });
+  overlay.querySelectorAll(".rv-handle").forEach((handle) => {
+    handle.addEventListener("mousedown", (e) => startDrag(e, handle.dataset.dir));
   });
 
   document.addEventListener("mousemove", (e) => {
     if (!dragging) return;
     const dx = (e.clientX - startX) / rvViewZoom;
     const dy = (e.clientY - startY) / rvViewZoom;
+
+    if (dragDir === "move") {
+      const moved = moveCropRect(startCanvasW, startH, startCropLeft, startCropTop, startVisW, startVisH, dx, dy);
+      rvCropLeft = moved.left;
+      rvFixedWidth = moved.right;
+      rvCropTop = moved.top;
+      rvCropBottom = moved.bottom;
+      const widthVal = $("rv-fix-width-val");
+      if (widthVal && $("rv-fix-width-enable")?.checked) widthVal.value = startVisW;
+    }
 
     if (dragDir === "r" || dragDir === "br") {
       // 오른쪽 경계 = 현재 왼쪽크롭 + 기존가시폭 + dx
@@ -1727,7 +1753,7 @@ async function loadGszFile(file) {
   setStatus("해석 결과 파싱 중...");
   rvState.allResults = await parseAllResults(zip, doc);
   rvState.selectedIdx = 0;
-  rvViewZoom = 1;
+  if (!rvZoomLocked) rvViewZoom = 1;
   $("rv-view-viewport").scrollLeft = 0;
   $("rv-view-viewport").scrollTop = 0;
 
@@ -2067,15 +2093,23 @@ export function initResultViewer() {
 
   const viewport = $("rv-view-viewport");
   const zoomAtCenter = (factor) => setViewZoom(rvViewZoom * factor, viewport.clientWidth / 2, viewport.clientHeight / 2);
+  $("rv-zoom-lock")?.addEventListener("click", (e) => {
+    rvZoomLocked = !rvZoomLocked;
+    e.currentTarget.setAttribute("aria-pressed", String(rvZoomLocked));
+    e.currentTarget.textContent = rvZoomLocked ? "고정 해제" : "화면 고정";
+    e.currentTarget.title = rvZoomLocked ? "배율 고정 해제" : "현재 배율 고정";
+    for (const id of ["rv-zoom-in", "rv-zoom-out", "rv-zoom-fit"]) $(id).disabled = rvZoomLocked;
+  });
   $("rv-zoom-in")?.addEventListener("click", () => zoomAtCenter(1.25));
   $("rv-zoom-out")?.addEventListener("click", () => zoomAtCenter(0.8));
   $("rv-zoom-fit")?.addEventListener("click", () => {
+    if (rvZoomLocked) return;
     setViewZoom(1, viewport.clientWidth / 2, viewport.clientHeight / 2);
     viewport.scrollLeft = 0;
     viewport.scrollTop = 0;
   });
   viewport?.addEventListener("wheel", (e) => {
-    if (!rvRenderCache) return;
+    if (!rvRenderCache || rvZoomLocked) return;
     e.preventDefault();
     const rect = viewport.getBoundingClientRect();
     setViewZoom(rvViewZoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12), e.clientX - rect.left, e.clientY - rect.top);

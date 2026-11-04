@@ -1725,6 +1725,8 @@ table.data-table td.readonly-cell input {
   font-size: 11px;
 }
 .rv-view-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.rv-crop-size { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text); padding: 0 8px; }
+#rv-zoom-lock[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
 .rv-view-viewport { overflow: auto; max-height: 72vh; min-height: 240px; scrollbar-gutter: stable; }
 .rv-view-viewport[data-panning="true"] { cursor: grabbing; user-select: none; }
 .rv-view-spacer { position: relative; margin: 0 auto; overflow: hidden; }
@@ -1756,7 +1758,9 @@ table.data-table td.readonly-cell input {
 .rv-resize-overlay {
   position: absolute;
   top: 0;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: move;
+  user-select: none;
   border: 2px solid var(--accent);
   box-sizing: border-box;
   border-radius: 4px;
