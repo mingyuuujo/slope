@@ -747,7 +747,7 @@ function drawSlipFosAndCenter(ctx, { ccx, ccy, fos, W, H, topPx, isRTL, slipStyl
   const fontSize      = Math.min(28, topPx * 0.55) * (slipStyle.fosScale ?? 1.0);
   const fontFamily    = !slipStyle.fosFont || slipStyle.fosFont === "default"
     ? "'HakgyoansimBareondotumB', '학교안심 바름돋움B', 'Pretendard', 'Segoe UI', Arial, sans-serif"
-    : `"${slipStyle.fosFont}", sans-serif`;
+    : `"${slipStyle.fosFont.replace(/["\\]/g, "")}", sans-serif`;
 
   if (centerVisible) {
     ctx.save();
@@ -2140,14 +2140,49 @@ export function initResultViewer() {
   const slipFosSlider = $("rv-slip-fosscale");
   const slipFosVal    = $("rv-slip-fosscale-val");
   const fosFontSelect = $("rv-fos-font");
+  const fontStatus    = $("rv-fos-font-status");
 
   if (fosFontSelect) {
     fosFontSelect.addEventListener("change", () => {
-      rvSlipStyle.fosFont = fosFontSelect.value;
-      rvSlipStyleAnim.fosFont = fosFontSelect.value;
+      const name = fosFontSelect.value.trim();
+      fosFontSelect.value = name === "기본 글꼴" ? "" : name;
+      rvSlipStyle.fosFont = !name || name === "기본 글꼴" ? "default" : name;
+      rvSlipStyleAnim.fosFont = rvSlipStyle.fosFont;
       if (rvState.allResults.length) renderCached();
     });
   }
+  let fontsRequested = false;
+  const loadLocalFonts = async () => {
+    if (fontsRequested) return;
+    fontsRequested = true;
+    fontStatus.style.display = "";
+    if (!window.queryLocalFonts) {
+      fontStatus.textContent = "이 브라우저에서는 글꼴 목록을 읽을 수 없습니다. 설치된 글꼴 이름을 직접 입력하세요.";
+      return;
+    }
+    try {
+      const fonts = await window.queryLocalFonts();
+      const list = $("rv-fos-font-list");
+      const known = new Set(Array.from(list.options, option => option.value));
+      const families = [...new Set(fonts.map(font => font.family).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
+      if (!families.length) {
+        fontStatus.textContent = "설치 글꼴 목록이 비어 있습니다. 브라우저 권한을 확인하거나 글꼴 이름을 직접 입력하세요.";
+        return;
+      }
+      for (const family of families) {
+        if (known.has(family)) continue;
+        const option = document.createElement("option");
+        option.value = family;
+        list.appendChild(option);
+      }
+      fontStatus.textContent = `${families.length}개 설치 글꼴을 불러왔습니다. 글꼴 이름을 입력해 검색하세요.`;
+    } catch {
+      fontStatus.textContent = "글꼴 접근이 허용되지 않았습니다. 브라우저 권한을 확인하거나 글꼴 이름을 직접 입력하세요.";
+    }
+  };
+  document.querySelector('[data-tab="result"]')?.addEventListener("click", loadLocalFonts);
+  fosFontSelect?.addEventListener("click", loadLocalFonts);
+  fosFontSelect?.addEventListener("keydown", loadLocalFonts);
 
   if (slipLwSlider) {
     slipLwSlider.addEventListener("input", () => {
