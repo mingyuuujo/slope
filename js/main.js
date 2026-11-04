@@ -47,12 +47,14 @@ import {
   clientToWorldWithView,
   worldToCanvasWithView,
 } from "./map-preview.js";
-import { initDxfGeoStudioTab } from "./dxf-geostudio-ui.js";
+// DXF 변환 탭은 dxf-convert-ui.js에서 처리
 import { initBatchDashboard } from "./batch-dashboard.js";
 import { initBatchMaterials } from "./batch-materials.js";
 import { initCaseTemplates } from "./case-ui.js";
 import { initPipeline } from "./pipeline.js";
 import { matchRegions, carryOverMaterials } from "./region-carryover.js";
+import { initDxfConvertTab } from "./dxf-convert-ui.js";
+import { initDxfGeoStudioTab } from "./dxf-geostudio-ui.js";
 
 /** Region 매핑: 해석별 GeoStudio Region ID → Material (여러 Analysis 지원) */
 const mapAnalysesState = {
@@ -3520,6 +3522,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   initGszEditor();
   initResultViewer();
+  initDxfConvertTab();
   initDxfGeoStudioTab();
   initBatchDashboard();
   initBatchMaterials();
